@@ -1,6 +1,6 @@
 #!/bin/bash
 #$ -l rt_AF=4
-#$ -l h_rt=20:00:00:00
+#$ -l h_rt=2:00:00:00
 #$ -j y
 #$ -o outputs/llama-2-13b-base/okazaki-lab-cc/
 #$ -cwd
@@ -13,7 +13,6 @@ module load nccl/2.16/2.16.2-1
 module load hpcx/2.12
 
 # python virtualenv
-cd /bb/llm/gaf51275/llama/Megatron-LM
 source .env/bin/activate
 
 # distributed settings

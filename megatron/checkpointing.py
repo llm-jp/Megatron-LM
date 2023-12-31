@@ -273,6 +273,8 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
         state_dict['args'] = args
         state_dict['checkpoint_version'] = 3.0
         state_dict['iteration'] = iteration
+        state_dict['tokens'] = args.consumed_train_tokens
+
         if len(model) == 1:
             state_dict['model'] = model[0].state_dict_for_save_checkpoint()
         else:
@@ -560,6 +562,8 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
     else:
         try:
             iteration = state_dict['iteration']
+            if 'tokens' in state_dict:
+                args.consumed_train_tokens = state_dict['tokens']
         except KeyError:
             try:  # Backward compatible with older checkpoints
                 iteration = state_dict['total_iters']

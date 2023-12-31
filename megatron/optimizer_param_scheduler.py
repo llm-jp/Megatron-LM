@@ -4,7 +4,8 @@
 
 import math
 
-from megatron import print_rank_0
+from megatron import print_rank_0, get_args
+
 
 class OptimizerParamScheduler(object):
     """Anneals learning rate and weight decay"""
@@ -123,16 +124,17 @@ class OptimizerParamScheduler(object):
 
         return self.min_lr + coeff * delta_lr
 
-
-    def step(self, increment):
+    def step(self, increment, token_num=None):
         """Set lr for all parameters groups."""
+        if token_num is None:
+            args = get_args()
+            token_num = args.consumed_train_tokens
         self.num_steps += increment
         new_lr = self.get_lr()
         new_wd = self.get_wd()
         for group in self.optimizer.param_groups:
             group['lr'] = new_lr * group.get('lr_mult', 1.0)
             group['weight_decay'] = new_wd * group.get('wd_mult', 1.0)
-
 
     def state_dict(self):
         state_dict = {
@@ -149,7 +151,6 @@ class OptimizerParamScheduler(object):
         }
         return state_dict
 
-
     def _check_and_set(self, cls_value, sd_value, name):
         """Auxiliary function for checking the values in the checkpoint and
         setting them."""
@@ -164,7 +165,6 @@ class OptimizerParamScheduler(object):
         print_rank_0(' > using checkpoint value {} for {}'.format(sd_value,
                                                                   name))
         return sd_value
-
 
     def load_state_dict(self, sd):
 

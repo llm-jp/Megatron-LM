@@ -487,7 +487,7 @@ def train_step(forward_step_func, data_iterator,
 
 def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                  loss_scale, report_memory_flag, skipped_iter,
-                 grad_norm, params_norm, num_zeros_in_grad, optimizer=None):
+                 grad_norm, params_norm, num_zeros_in_grad, optimizer=None, skipped_iteration=0):
     """Log training information such as losses, timing, ...."""
     args = get_args()
     timers = get_timers()
@@ -694,6 +694,9 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         wandb_stats["stats/tokens_per_sec"] = tokens_per_sec
         wandb_stats["stats/tokens_per_sec_per_replica"] = tokens_per_sec_per_replica
 
+        # log skip batch
+        wandb_stats["others/skipped_iterations"] = skipped_iteration
+
         if wandb_writer and is_last_rank():
             wandb.log(wandb_stats, step=iteration)
         if writer:
@@ -790,7 +793,36 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     timers('interval-time', log_level=0).start(barrier=True)
     print_datetime('before the start of training step')
     report_memory_flag = True
+    skipped_iteration: int = 0
+
+    # flush intervals prior to current iteration
+    if args.skip_train_iteration_range is not None:
+        import bisect
+
+        ends = [end for start, end in args.skip_train_iteration_range]
+        index = bisect.bisect_left(ends, iteration)
+        for _ in range(index):
+            args.skip_train_iteration_range.popleft()
+
     while iteration < args.train_iters:
+        if (
+            # train_data_iterator is not None
+            args.skip_train_iteration_range is not None
+            and len(args.skip_train_iteration_range) > 0
+            and args.skip_train_iteration_range[0][0] <= iteration + 1 <= args.skip_train_iteration_range[0][1]
+        ):
+            start, end = args.skip_train_iteration_range.popleft()
+            print_rank_0(f"Skipped iterations {start} to {end} due to --skip-train-iteration-range flag.")
+            iteration_for_skipping = iteration
+            while iteration_for_skipping + 1 <= end:
+                try:
+                    _ = next(train_data_iterator)
+                except TypeError:
+                    pass
+                iteration_for_skipping += 1
+                skipped_iteration += 1
+            continue
+
         if args.profile and \
            iteration == args.profile_step_start and \
            torch.distributed.get_rank() in args.profile_ranks:
@@ -823,7 +855,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                           optimizer.param_groups[0]['lr'],
                                           iteration, loss_scale,
                                           report_memory_flag, skipped_iter,
-                                          grad_norm, params_norm, num_zeros_in_grad, optimizer)
+                                          grad_norm, params_norm, num_zeros_in_grad, optimizer,
+                                          skipped_iteration=skipped_iteration)
 
         # Autoresume
         if args.adlr_autoresume and \

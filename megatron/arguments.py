@@ -375,6 +375,32 @@ def validate_args(args, defaults={}):
                 retro_args.retro_gpt_chunk_length
             set_retro_args(retro_args)
 
+    # Skip train iterations
+    if args.skip_train_iteration_range is not None:
+        import collections
+
+        args.skip_train_iteration_range = [
+            list(map(int, range_.split("-"))) for range_ in args.skip_train_iteration_range
+        ]
+        args.skip_train_iteration_range.sort()
+        skip_train_iteration_range = collections.deque()
+        for range_ in args.skip_train_iteration_range:
+            if len(range_) == 2:
+                start, end = range_
+                assert end >= start, "end of skip range cannot be smaller than start of skip range"
+                # merge overlapping intervals (e.g. 1-5 2-6 -> 1-6)
+                if not skip_train_iteration_range:
+                    skip_train_iteration_range.append([start, end])
+                elif skip_train_iteration_range[-1][1] >= start:
+                    skip_train_iteration_range[-1][1] = max(end, skip_train_iteration_range[-1][1])
+                else:
+                    skip_train_iteration_range.append([start, end])
+            else:
+                raise ValueError(
+                    "skip train iterations should be specified as two numbers, i.e. start-end"
+                )
+        args.skip_train_iteration_range = skip_train_iteration_range
+
     # Legacy RoPE arguments
     if args.use_rotary_position_embeddings:
         args.position_embedding_type = 'rope'
@@ -383,7 +409,7 @@ def validate_args(args, defaults={}):
     # don't allow it to keep things simple
     if not args.add_position_embedding and args.position_embedding_type != 'rope':
         raise RuntimeError('--no-position-embedding is deprecated, use --position-embedding-type')
-    
+
     # MoE Spec check
     if args.num_experts is not None:
         assert args.model_spec is None, "Model Spec must be None when using MoEs"
@@ -424,6 +450,7 @@ def _print_args(title, args):
 def _check_arg_is_not_none(args, arg):
     assert getattr(args, arg) is not None, '{} argument is None'.format(arg)
 
+
 def core_transformer_config_from_args(args):
 
     # Translate args to core transformer configuration
@@ -451,6 +478,7 @@ def core_transformer_config_from_args(args):
         kw_args['num_query_groups'] = None
 
     return TransformerConfig(**kw_args)
+
 
 def _add_transformer_engine_args(parser):
     group = parser.add_argument_group(title='Transformer-Engine')
@@ -480,6 +508,7 @@ def _add_transformer_engine_args(parser):
                        help='Which Transformer implementation to use.')
 
     return parser
+
 
 def _add_inference_args(parser):
     group = parser.add_argument_group(title='inference')
@@ -891,6 +920,8 @@ def _add_training_args(parser):
                        dest='gradient_accumulation_fusion')
     group.add_argument('--expert-parallel', action='store_true',
                        help='Enable expert parallel optimization.')
+    group.add_argument('--skip-train-iteration-range', type=str, nargs='+', default=None,
+                       help='Iteration ranges to skip. The values are one or more dash-separated ranges. e.g., 101-200 251-300.')
     return parser
 
 

@@ -5,6 +5,7 @@
     "gelu",
     "huggingface",
     "layernorm",
+    "logit",
     "microbatches",
     "OMPI",
     "prescale",

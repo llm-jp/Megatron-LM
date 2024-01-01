@@ -4,7 +4,6 @@
 
 from datetime import datetime
 import math
-from pyexpat import model
 import sys
 import time
 import wandb
@@ -397,7 +396,6 @@ def setup_model_and_optimizer(model_provider_func,
             optimizer.reload_model_params()
 
     return model, optimizer, opt_param_scheduler
-
 
 
 def train_step(forward_step_func, data_iterator,

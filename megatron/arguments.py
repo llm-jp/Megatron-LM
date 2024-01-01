@@ -922,6 +922,7 @@ def _add_training_args(parser):
                        help='Enable expert parallel optimization.')
     group.add_argument('--skip-train-iteration-range', type=str, nargs='+', default=None,
                        help='Iteration ranges to skip. The values are one or more dash-separated ranges. e.g., 101-200 251-300.')
+    group.add_argument("--use-z-loss", action="store_true", help="use z-loss for supplement loss (Google PaLM method)")
     return parser
 
 

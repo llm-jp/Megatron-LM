@@ -1,7 +1,8 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 """GPT-2 model."""
-
+import argparse
+from typing import Optional
 import torch
 
 from megatron import get_args
@@ -13,31 +14,43 @@ from .language_model import parallel_lm_logits
 from .language_model import get_language_model
 
 
-def post_language_model_processing(lm_output, labels, logit_weights,
+def post_language_model_processing(lm_output, labels: torch.Tensor, logit_weights,
                                    parallel_output,
-                                   fp16_lm_cross_entropy):
+                                   fp16_lm_cross_entropy, args: Optional[argparse.Namespace] = None):
 
     # Output. Format [s b h]
-    output = parallel_lm_logits(
+    output: torch.Tensor = parallel_lm_logits(  # type: ignore
         lm_output,
         logit_weights,
         parallel_output)
 
     if labels is None:
         # [s b h] => [b s h]
-        return output.transpose(0,1).contiguous()
+        return output.transpose(0, 1).contiguous()
     else:
         # [b s] => [s b]
-        labels = labels.transpose(0,1).contiguous()
-        if fp16_lm_cross_entropy:
-            assert output.dtype == torch.half
-            loss = tensor_parallel.vocab_parallel_cross_entropy(output, labels)
+        labels = labels.transpose(0, 1).contiguous()
+        if args is not None and args.use_z_loss:
+            if fp16_lm_cross_entropy:
+                assert output.dtype == torch.half
+                total_loss: torch.Tensor = tensor_parallel.vocab_parallel_cross_entropy(output, labels, 0.0, args)  # type: ignore
+            else:
+                total_loss = tensor_parallel.vocab_parallel_cross_entropy(output.float(), labels, 0.0, args)  # type: ignore
+
+            # [s, b] => [b, s]
+            total_loss = total_loss.transpose(0, 1).contiguous()  # loss + z-loss
+
+            return total_loss
         else:
-            loss = tensor_parallel.vocab_parallel_cross_entropy(output.float(), labels)
-        
-        # [s b] => [b, s]
-        loss = loss.transpose(0,1).contiguous()
-        return loss
+            if fp16_lm_cross_entropy:
+                assert output.dtype == torch.half
+                loss = tensor_parallel.vocab_parallel_cross_entropy(output, labels, 0.0, args)  # type: ignore
+            else:
+                loss: torch.Tensor = tensor_parallel.vocab_parallel_cross_entropy(output.float(), labels, 0.0, args)  # type: ignore
+
+            # [s b] => [b, s]
+            loss = loss.transpose(0, 1).contiguous()
+            return loss
 
 
 class GPTModel(MegatronModule):
@@ -50,6 +63,7 @@ class GPTModel(MegatronModule):
                  pre_process=True,
                  post_process=True):
         args = get_args()
+        self.args = args
         super().__init__(config=config, share_embeddings_and_output_weights=not args.untie_embeddings_and_output_weights)
 
         self.parallel_output = parallel_output
@@ -65,7 +79,7 @@ class GPTModel(MegatronModule):
             encoder_attn_mask_type=AttnMaskType.causal,
             pre_process=self.pre_process,
             post_process=self.post_process)
-        
+
         if not args.untie_embeddings_and_output_weights:
             self.initialize_word_embeddings()
 
@@ -93,7 +107,7 @@ class GPTModel(MegatronModule):
                 lm_output, labels,
                 self.language_model.output_layer.weight if self.untie_embeddings_and_output_weights else self.shared_embedding_or_output_weight(),
                 self.parallel_output,
-                self.fp16_lm_cross_entropy)
+                self.fp16_lm_cross_entropy, self.args)
         else:
             return lm_output
 

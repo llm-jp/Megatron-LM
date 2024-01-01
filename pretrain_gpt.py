@@ -66,6 +66,7 @@ def get_batch(data_iterator):
 
     return tokens, labels, loss_mask, attention_mask, position_ids
 
+
 def loss_func(loss_mask, output_tensor):
     losses = output_tensor.float()
     loss_mask = loss_mask.view(-1).float()

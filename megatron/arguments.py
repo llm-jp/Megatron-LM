@@ -85,8 +85,8 @@ def validate_args(args, defaults={}):
         args.pipeline_model_parallel_size
     )
     # Checks.
-    model_parallel_size = args.pipeline_model_parallel_size * \
-                          args.tensor_model_parallel_size
+    model_parallel_size = args.pipeline_model_parallel_size * args.tensor_model_parallel_size
+
     assert args.world_size % model_parallel_size == 0, 'world size ({}) is not'\
         ' divisible by tensor parallel size ({}) times pipeline parallel ' \
         'size ({})'.format(args.world_size, args.tensor_model_parallel_size,
@@ -102,9 +102,9 @@ def validate_args(args, defaults={}):
     if args.pipeline_model_parallel_size > 1:
         if args.pipeline_model_parallel_split_rank is not None:
             assert args.pipeline_model_parallel_split_rank < \
-                    args.pipeline_model_parallel_size, 'split rank needs'\
-                    ' to be less than pipeline model parallel size ({})'.format(
-                            args.pipeline_model_parallel_size)
+                   args.pipeline_model_parallel_size, 'split rank needs'\
+                   ' to be less than pipeline model parallel size ({})'.format(
+                       args.pipeline_model_parallel_size)
 
     # Deprecated arguments
     assert args.batch_size is None, '--batch-size argument is no longer ' \
@@ -137,8 +137,7 @@ def validate_args(args, defaults={}):
             if args.rank == 0:
                 print('WARNING: overriding default arguments for {key}:{v} \
                        with {key}:{v2}'.format(key=key, v=defaults[key],
-                                               v2=getattr(args, key)),
-                                               flush=True)
+                                               v2=getattr(args, key)), flush=True)
         else:
             setattr(args, key, defaults[key])
 
@@ -427,7 +426,7 @@ def validate_args(args, defaults={}):
     _print_args("arguments", args)
     retro_args = get_retro_args()
     if retro_args and args != retro_args:
-        _print_args("retro arguments", types.SimpleNamespace(**{k:v for k,v in vars(retro_args).items() if k.startswith("retro")}, rank=args.rank))
+        _print_args("retro arguments", types.SimpleNamespace(**{k: v for k, v in vars(retro_args).items() if k.startswith("retro")}, rank=args.rank))
 
     return args
 
@@ -601,7 +600,7 @@ def _add_network_size_args(parser):
                        '   args.hidden_size // args.num_attention_heads '
                        'if not provided.')
     group.add_argument('--group-query-attention', action='store_true',
-                          help='Use group-query attention.')
+                       help='Use group-query attention.')
     group.add_argument('--num-query-groups', type=int, default=1)
 
     group.add_argument('--max-position-embeddings', type=int, default=None,
@@ -665,7 +664,7 @@ def _add_logging_args(parser):
     group.add_argument('--log-num-zeros-in-grad', action='store_true',
                        help='If set, calculate and log the number of zeros in gradient.')
     group.add_argument('--timing-log-level', type=int,
-                       default=0, choices=range(0,3),
+                       default=0, choices=range(0, 3),
                        help='Granularity level to measure and report timing. '
                        '   0: report only iteration time and make sure timing '
                        '      does not introduce extra overhead.'
@@ -1111,10 +1110,10 @@ def _add_distributed_args(parser):
                        'skips DDP initialization and returns function to '
                        'complete it instead.Also turns on '
                        '--use-cpu-initialization flag. This is for '
-                       'external DDP manager.' )
+                       'external DDP manager.')
     group.add_argument('--use-cpu-initialization', action='store_true',
                        default=None, help='If set, affine parallel weights '
-                       'initialization uses CPU' )
+                       'initialization uses CPU')
     group.add_argument('--empty-unused-memory-level', default=0, type=int,
                        choices=[0, 1, 2],
                        help='Call torch.cuda.empty_cache() each iteration '
@@ -1251,14 +1250,11 @@ def _add_biencoder_args(parser):
 
     # network size
     group.add_argument('--ict-head-size', type=int, default=None,
-                       help='Size of block embeddings to be used in ICT and '
-                        'REALM (paper default: 128)')
+                       help='Size of block embeddings to be used in ICT and REALM (paper default: 128)')
     group.add_argument('--biencoder-projection-dim', type=int, default=0,
-                       help='Size of projection head used in biencoder (paper'
-                        ' default: 128)')
+                       help='Size of projection head used in biencoder (paper default: 128)')
     group.add_argument('--biencoder-shared-query-context-model', action='store_true',
-                        help='Whether to share the parameters of the query '
-                        'and context models or not')
+                       help='Whether to share the parameters of the query and context models or not')
 
     # checkpointing
     group.add_argument('--ict-load', type=str, default=None,
@@ -1280,18 +1276,15 @@ def _add_biencoder_args(parser):
 
     # training
     group.add_argument('--retriever-report-topk-accuracies', nargs='+', type=int,
-                        default=[], help="Which top-k accuracies to report "
-                        "(e.g. '1 5 20')")
+                       default=[], help="Which top-k accuracies to report (e.g. '1 5 20')")
     group.add_argument('--retriever-score-scaling', action='store_true',
-                       help='Whether to scale retriever scores by inverse '
-                        'square root of hidden size')
+                       help='Whether to scale retriever scores by inverse square root of hidden size')
 
     # faiss index
     group.add_argument('--block-data-path', type=str, default=None,
                        help='Where to save/load BlockData to/from')
     group.add_argument('--embedding-path', type=str, default=None,
-                       help='Where to save/load Open-Retrieval Embedding'
-                        ' data to/from')
+                       help='Where to save/load Open-Retrieval Embedding data to/from')
 
     # indexer
     group.add_argument('--indexer-batch-size', type=int, default=128,
@@ -1370,6 +1363,7 @@ def _add_vision_args(parser):
                        help='warmup teacher temperaure epochs')
 
     return parser
+
 
 def _add_experimental_args(parser):
     group = parser.add_argument_group(title='experimental')

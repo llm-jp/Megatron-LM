@@ -4,6 +4,7 @@ import logging
 from typing import Literal, Optional
 
 import torch
+import torch.distributed as torch_distributed
 from torch import Tensor
 
 from megatron.core import parallel_state, tensor_parallel
@@ -96,7 +97,7 @@ class GPTModel(MegatronModule):
 
             self.rotary_pos_emb = RotaryEmbedding(rotary_dim, seq_len_interpolation_factor)
         else:
-            self.rotary_pos_emb = None
+            self.rotary_pos_emb = None  # type: ignore
 
         # Transformer.
         self.decoder = TransformerBlock(
@@ -140,8 +141,8 @@ class GPTModel(MegatronModule):
         input_ids: Tensor,
         position_ids: Tensor,
         attention_mask: Tensor,
-        decoder_input: Tensor = None,
-        labels: Tensor = None,
+        decoder_input: Optional[Tensor] = None,
+        labels: Optional[Tensor] = None,
         inference_params=None,
     ):
         # If decoder_input is provided (not None), then input_ids and position_ids are ignored.
@@ -166,7 +167,7 @@ class GPTModel(MegatronModule):
                 if self.decoder.input_tensor is not None:
                     rotary_seq_len = self.decoder.input_tensor.size(0)
                 else:
-                    rotary_seq_len = decoder_input.size(0)
+                    rotary_seq_len = decoder_input.size(0)  # type: ignore
 
                 # Decoder input is split along sequence dimension, but RoPE is applied in tensor parallel region
                 if self.config.sequence_parallel:
@@ -197,7 +198,9 @@ class GPTModel(MegatronModule):
 
         # [b s] => [s b]
         labels = labels.transpose(0, 1).contiguous()
-        loss = tensor_parallel.vocab_parallel_cross_entropy(logits.float(), labels)
+        loss: torch.Tensor = tensor_parallel.vocab_parallel_cross_entropy(  # type: ignore
+            vocab_parallel_logits=logits.float(), target=labels
+        )
 
         # [s b] => [b, s]
         loss = loss.transpose(0, 1).contiguous()
@@ -223,8 +226,8 @@ class GPTModel(MegatronModule):
             assert not parallel_state.is_pipeline_first_stage()
             # set word_embeddings weights to 0 here, then copy first
             # stage's weights using all_reduce below.
-            self.output_layer.weight.data.fill_(0)
-            self.output_layer.weight.shared = True
+            self.output_layer.weight.data.fill_(0)  # type: ignore
+            self.output_layer.weight.shared = True  # type: ignore
 
         # Parameters are shared between the word embeddings layers, and the
         # heads at the end of the model. In a pipelined setup with more than
@@ -241,11 +244,11 @@ class GPTModel(MegatronModule):
 
         # Ensure that first and last stages have the same initial parameter
         # values.
-        if torch.distributed.is_initialized():
+        if torch_distributed.is_initialized():
             if parallel_state.is_rank_in_embedding_group():
                 weight = self.shared_embedding_or_output_weight()
-                torch.distributed.all_reduce(
-                    weight.data, group=parallel_state.get_embedding_group()
+                torch_distributed.all_reduce(
+                    weight.data, group=parallel_state.get_embedding_group()  # type: ignore
                 )
 
         elif not getattr(GPTModel, "embedding_warning_printed", False):

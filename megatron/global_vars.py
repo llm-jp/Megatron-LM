@@ -36,15 +36,15 @@ def get_retro_args():
 
 
 def get_num_microbatches():
-    return _GLOBAL_NUM_MICROBATCHES_CALCULATOR.get()
+    return _GLOBAL_NUM_MICROBATCHES_CALCULATOR.get()  # type: ignore
 
 
 def get_current_global_batch_size():
-    return _GLOBAL_NUM_MICROBATCHES_CALCULATOR.get_current_global_batch_size()
+    return _GLOBAL_NUM_MICROBATCHES_CALCULATOR.get_current_global_batch_size()  # type: ignore
 
 
 def update_num_microbatches(consumed_samples, consistency_check=True):
-    _GLOBAL_NUM_MICROBATCHES_CALCULATOR.update(consumed_samples,
+    _GLOBAL_NUM_MICROBATCHES_CALCULATOR.update(consumed_samples,  # type: ignore
                                                consistency_check)
 
 
@@ -73,7 +73,7 @@ def get_adlr_autoresume():
 def get_timers():
     """Return timers."""
     _ensure_var_is_initialized(_GLOBAL_TIMERS, 'timers')
-    return _GLOBAL_TIMERS
+    return typing.cast(Timers, _GLOBAL_TIMERS)
 
 
 def get_signal_handler():
@@ -147,10 +147,9 @@ def _set_tensorboard_writer(args: argparse.Namespace):
     _ensure_var_is_not_initialized(_GLOBAL_TENSORBOARD_WRITER,
                                    'tensorboard writer')
 
-    if hasattr(args, 'tensorboard_dir') and \
-       args.tensorboard_dir and args.rank == (args.world_size - 1):
+    if hasattr(args, 'tensorboard_dir') and args.tensorboard_dir and args.rank == (args.world_size - 1):
         try:
-            from torch.utils.tensorboard import SummaryWriter
+            from torch.utils.tensorboard.writer import SummaryWriter
             print('> setting tensorboard ...')
             _GLOBAL_TENSORBOARD_WRITER = SummaryWriter(
                 log_dir=args.tensorboard_dir,
@@ -178,12 +177,12 @@ def _set_wandb_writer(args: argparse.Namespace) -> None:
             now = datetime.now()
             now = now.strftime("%Y-%m-%d-%H-%M-%S")
             exp_name = args.wandb_name + "-" + now
-            entity: str = args.wandb_entity or "okoge"
+            entity: str = args.wandb_entity
             wandb_input = {
                 "entity": entity,
                 "name": exp_name,
                 "config": args,
-                "project": args.wandb_project or "megatron-lm-3d",
+                "project": args.wandb_project,
             }
             if args.wandb_id is not None:
                 wandb_input["id"] = args.wandb_id
@@ -210,7 +209,7 @@ def _set_adlr_autoresume(args: argparse.Namespace):
             print('enabling autoresume ...', flush=True)
         sys.path.append(os.environ.get('SUBMIT_SCRIPTS', '.'))
         try:
-            from userlib.auto_resume import AutoResume
+            from userlib.auto_resume import AutoResume  # type: ignore
         except BaseException:
             print('ADLR autoresume is not available, exiting ...')
             sys.exit()
@@ -233,6 +232,3 @@ def _ensure_var_is_initialized(var, name):
 def _ensure_var_is_not_initialized(var, name):
     """Make sure the input variable is not None."""
     assert var is None, '{} is already initialized.'.format(name)
-
-
-

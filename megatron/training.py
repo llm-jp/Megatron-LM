@@ -11,6 +11,7 @@ import typing
 # The earliest we can measure the start time.
 _TRAIN_START_TIME = time.time()
 import torch
+import torch.distributed as torch_distributed
 
 from megatron import get_args
 from megatron import get_signal_handler
@@ -46,7 +47,7 @@ from megatron.model.vision.knn_monitor import compute_feature_bank
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
-    torch.distributed.barrier()
+    torch_distributed.barrier()
     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print_rank_0('[' + string + '] datetime: {} '.format(time_str))
 
@@ -98,8 +99,8 @@ def pretrain(train_valid_test_dataset_provider,
     # image ... launches.
     global _TRAIN_START_TIME
     start_time_tensor = torch.cuda.DoubleTensor([_TRAIN_START_TIME])
-    torch.distributed.all_reduce(start_time_tensor,
-                                 op=torch.distributed.ReduceOp.MIN)
+    torch_distributed.all_reduce(start_time_tensor,
+                                 op=torch_distributed.ReduceOp.MIN)
     _TRAIN_START_TIME = start_time_tensor.item()
     print_rank_0('time to initialize megatron (seconds): {:.3f}'.format(
         time.time() - _TRAIN_START_TIME))
@@ -511,7 +512,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     for key in loss_dict:
         if not skipped_iter:
             total_loss_dict[key] = total_loss_dict.get(
-                key, torch.cuda.FloatTensor([0.0])) + loss_dict[key]
+                key, torch.cuda.FloatTensor([0.0])) + loss_dict[key]  # type: ignore
         else:
             value = loss_dict[key].float().sum().item()
             is_nan = value == float('inf') or \
@@ -716,7 +717,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                       float(max(1, total_loss_dict[advanced_iters_key]))
                 if avg > 0.0:
                     log_string += ' {}: {:.6E} |'.format(key, avg)
-                total_loss_dict[key] = torch.cuda.FloatTensor([0.0])
+                total_loss_dict[key] = torch.cuda.FloatTensor([0.0])  # type: ignore
         log_string += ' loss scale: {:.1f} |'.format(loss_scale)
         if grad_norm is not None:
             log_string += ' grad norm: {:.3f} |'.format(grad_norm)
@@ -779,8 +780,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     config.grad_scale_func = optimizer.scale_loss
     config.timers = timers
     # TODO: Remove this once we move DDP to Core.
-    if len(model) == 1 and isinstance(model[0], DDP) and \
-        args.overlap_grad_reduce:
+    if len(model) == 1 and isinstance(model[0], DDP) and args.overlap_grad_reduce:
         assert config.no_sync_func is None, \
             ('When overlap_grad_reduce is True, config.no_sync_func must be None; '
              'a custom no_sync_func is not supported when overlapping grad-reduce')
@@ -823,7 +823,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         if args.profile and \
            iteration == args.profile_step_start and \
-           torch.distributed.get_rank() in args.profile_ranks:
+           torch_distributed.get_rank() in args.profile_ranks:
             torch.cuda.cudart().cudaProfilerStart()
             torch.autograd.profiler.emit_nvtx(record_shapes=True).__enter__()
 
@@ -890,10 +890,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # Exiting based on duration
         if args.exit_duration_in_mins:
             train_time = (time.time() - _TRAIN_START_TIME) / 60.0
-            done_cuda = torch.cuda.IntTensor(
+            done_cuda = torch.cuda.IntTensor(  # type: ignore
                 [train_time > args.exit_duration_in_mins])
-            torch.distributed.all_reduce(
-                done_cuda, op=torch.distributed.ReduceOp.MAX)
+            torch_distributed.all_reduce(
+                done_cuda, op=torch_distributed.ReduceOp.MAX)
             done = done_cuda.item()
             if done:
                 if not saved_checkpoint:
@@ -907,13 +907,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             if args.save and not saved_checkpoint:
                 save_checkpoint_and_time(iteration, model, optimizer,
                                          opt_param_scheduler)
-            torch.distributed.barrier()
+            torch_distributed.barrier()
             print_datetime('exiting program at iteration {}'.format(iteration))
             sys.exit()
 
         if args.profile and \
            iteration == args.profile_step_end and \
-           torch.distributed.get_rank() in args.profile_ranks:
+           torch_distributed.get_rank() in args.profile_ranks:
             torch.cuda.cudart().cudaProfilerStop()
 
     return iteration
@@ -974,17 +974,17 @@ def evaluate(forward_step_func,
                 for loss_dict in loss_dicts:
                     for key in loss_dict:
                         total_loss_dict[key] = total_loss_dict.get(
-                            key, torch.cuda.FloatTensor([0.0])) + loss_dict[key]
+                            key, torch.cuda.FloatTensor([0.0])) + loss_dict[key]  # type: ignore
 
             args.consumed_valid_samples += eval_batch_size
 
         collected_non_loss_data = None
         if process_non_loss_data_func is not None and is_last_rank():
-            collected_non_loss_data = forward_backward_func(
+            collected_non_loss_data = forward_backward_func(  # type: ignore
                 forward_step_func=forward_step_func,
                 data_iterator=data_iterator,
                 model=model,
-                num_microbatches=get_num_microbatches(),
+                num_microbatches=get_num_microbatches(),  # type: ignore
                 seq_length=args.seq_length,
                 micro_batch_size=args.micro_batch_size,
                 decoder_seq_length=args.decoder_seq_length,
@@ -1065,8 +1065,7 @@ def build_train_valid_test_datasets(build_train_valid_test_datasets_provider):
         train_samples = args.train_samples
     else:
         train_samples = args.train_iters * args.global_batch_size
-    eval_iters = (args.train_iters // args.eval_interval + 1) * \
-                 args.eval_iters
+    eval_iters = (args.train_iters // args.eval_interval + 1) * args.eval_iters
     test_iters = args.eval_iters
     train_val_test_num_samples = [train_samples,
                                   eval_iters * args.global_batch_size,
@@ -1122,13 +1121,13 @@ def build_train_valid_test_data_loaders(
         do_valid = valid_dataloader is not None and args.eval_iters > 0
         do_test = test_dataloader is not None and args.eval_iters > 0
         # Need to broadcast num_tokens and num_type_tokens.
-        flags = torch.cuda.LongTensor(
+        flags = torch.cuda.LongTensor(  # type: ignore
             [int(do_train), int(do_valid), int(do_test)])
     else:
-        flags = torch.cuda.LongTensor([0, 0, 0])
+        flags = torch.cuda.LongTensor([0, 0, 0])  # type: ignore
 
     # Broadcast num tokens.
-    torch.distributed.broadcast(flags,
+    torch_distributed.broadcast(flags,
                                 mpu.get_tensor_model_parallel_src_rank(),
                                 group=mpu.get_tensor_model_parallel_group())
     args.do_train = flags[0].item()

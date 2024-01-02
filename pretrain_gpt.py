@@ -4,6 +4,8 @@
 
 import os
 import torch
+import torch.distributed as torch_distributed
+
 from functools import partial
 from megatron import get_args
 from megatron import print_rank_0
@@ -18,9 +20,10 @@ from megatron.utils import get_ltor_masks_and_position_ids
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.arguments import core_transformer_config_from_args
 
+
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
-    args = get_args()
+    args = get_args()  # noqa: F841
 
     print_rank_0('building GPT model ...')
     config = core_transformer_config_from_args(get_args())
@@ -59,7 +62,7 @@ def get_batch(data_iterator):
     # Get the masks and postition ids.
     attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
         tokens,
-        tokenizer.eod,
+        tokenizer.eod,  # type: ignore
         args.reset_position_ids,
         args.reset_attention_mask,
         args.eod_mask_loss)
@@ -75,7 +78,7 @@ def loss_func(loss_mask, output_tensor):
     # Check individual rank losses are not NaN prior to DP all-reduce.
     args = get_args()
     if args.check_for_nan_in_loss_and_grad:
-        global_rank = torch.distributed.get_rank()
+        global_rank = torch_distributed.get_rank()
         assert not loss.isnan(), (
             f'Rank {global_rank}: found NaN in local forward loss calculation. '
             f'Device: {torch.cuda.current_device()}, node: {os.uname()[1]}'
@@ -89,7 +92,7 @@ def loss_func(loss_mask, output_tensor):
 
 def forward_step(data_iterator, model):
     """Forward step."""
-    args = get_args()
+    args = get_args()  # noqa: F841
     timers = get_timers()
 
     # Get the batch.
@@ -98,8 +101,7 @@ def forward_step(data_iterator, model):
         data_iterator)
     timers('batch-generator').stop()
 
-    output_tensor = model(tokens, position_ids, attention_mask,
-                          labels=labels)
+    output_tensor = model(tokens, position_ids, attention_mask, labels=labels)
 
     return output_tensor, partial(loss_func, loss_mask)
 
@@ -108,8 +110,7 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
     """Build train, valid, and test datasets."""
     args = get_args()
 
-    print_rank_0('> building train, validation, and test datasets '
-                 'for GPT ...')
+    print_rank_0('> building train, validation, and test datasets for GPT ...')
     train_ds, valid_ds, test_ds = build_train_valid_test_datasets(
         data_prefix=args.data_path,
         splits_string=args.split,

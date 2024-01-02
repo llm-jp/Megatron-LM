@@ -1,7 +1,7 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 """General utilities."""
-
+import argparse
 import sys
 
 import torch
@@ -242,7 +242,11 @@ def print_rank_last(message):
 import torch.distributed as torch_distributed
 
 
-def throughput_calculator(args, iteration_time, total_iterations):
+def throughput_calculator(
+    args: argparse.Namespace,
+    iteration_time: float,
+    total_iterations: int,
+) -> tuple[float, float, int, int]:
     gpus_per_model: int = torch_distributed.get_world_size(group=mpu.get_model_parallel_group())
     batch_size: int = args.micro_batch_size * get_num_microbatches() * args.data_parallel_size
     samples_per_model: int = batch_size * args.seq_length

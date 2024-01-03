@@ -280,20 +280,20 @@ def throughput_calculator(
         activation_function_factor = 4 + 2  # SWiGLU (upscaling + down scaling)
 
 
-    flops_per_iteration: float = (
-    2 * vocab_size * hidden_size * seq_len * checkpoint_activations_factor 
-    + checkpoint_activations_factor * (
-        (24 - (4 - 2 * args.num_query_groups / args.num_attention_heads) - 
-        (16 - activation_function_factor * (intermediate_size / hidden_size)  ) ) * seq_len * (hidden_size ** 2) + 4 * seq_len * seq_len * hidden_size) * num_layers + 
-        2 * vocab_size * hidden_size * seq_len * checkpoint_activations_factor ) * batch_size
+    flops_per_iteration: float = checkpoint_activations_factor * ((
+        (4 + 4 * (args.num_query_groups / args.num_attention_heads) + activation_function_factor * (intermediate_size / hidden_size)) * batch_size * seq_len * num_layers * (hidden_size**2)
+    ) + (
+        4 * batch_size * (seq_len ** 2) * hidden_size +  # noqa: W504
+        4 * batch_size * seq_len * hidden_size * vocab_size) 
+    )
+    # Computational complexity of the logits part 
+    # https://arxiv.org/pdf/2203.15556.pdf
+    # 2 * seq_len * hidden_size * vocab_size * checkpoint_activations_factor * batch_size 
 
     if hasattr(args, 'recompute_granularity') and (args.recompute_granularity == 'selective'):
         # https://arxiv.org/abs/2205.05198
         flops_per_iteration += 4 * batch_size * (seq_len ** 2) * hidden_size * num_layers
-        
-    tflops: float = flops_per_iteration / (elapsed_time_per_iter * args.world_size * (10**12))
-
-
+            
     tflops: float = flops_per_iteration / (elapsed_time_per_iter * args.world_size * (10**12))
 
     return samples_per_second, tflops, samples_per_model, model_replica_count

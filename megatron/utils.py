@@ -283,7 +283,7 @@ def throughput_calculator(
     flops_per_iteration: float = checkpoint_activations_factor * ((
         (4 + 4 * (args.num_query_groups / args.num_attention_heads) + activation_function_factor * (intermediate_size / hidden_size)) * batch_size * seq_len * num_layers * (hidden_size**2)
     ) + (
-        4 * batch_size * (seq_len ** 2) * hidden_size +  # noqa: W504
+        4 * batch_size * (seq_len ** 2) * hidden_size * num_layers +  # noqa: W504
         4 * batch_size * seq_len * hidden_size * vocab_size) 
     )
     # Computational complexity of the logits part 

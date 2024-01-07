@@ -154,7 +154,6 @@ else
   CHECKPOINT_ARGS="--load ${CHECKPOINT_DIR} --no-load-rng --no-load-optim"
 fi
 
-export NCCL_DEBUG=INFO
 # run
 /usr/local/openmpi-4.1.5/bin/mpirun -np $NUM_GPUS \
   --npernode $NUM_GPU_PER_NODE \
@@ -199,7 +198,7 @@ export NCCL_DEBUG=INFO
   --adam-beta1 0.9 \
   --adam-beta2 0.95 \
   --log-interval 1 \
-  --save-interval 500 \
+  --save-interval 100 \
   --eval-interval 100 \
   --eval-iters 10 \
   --bf16 \

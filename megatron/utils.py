@@ -283,7 +283,8 @@ def throughput_calculator(
     flops_per_iteration: float = checkpoint_activations_factor * ((
         (4 + 4 * (args.num_query_groups / args.num_attention_heads) + activation_function_factor * (intermediate_size / hidden_size)) * batch_size * seq_len * num_layers * (hidden_size**2)
     ) + (
-        4 * batch_size * (seq_len ** 2) * hidden_size * num_layers +  # noqa: W504
+        2 * batch_size * (seq_len ** 2) * hidden_size * num_layers * (args.num_query_groups / args.num_attention_heads) + # softmax 
+        2 * batch_size * (seq_len ** 2) * hidden_size * num_layers +  # softmax v
         4 * batch_size * seq_len * hidden_size * vocab_size) 
     )
     # Computational complexity of the logits part 
@@ -292,7 +293,8 @@ def throughput_calculator(
 
     if hasattr(args, 'recompute_granularity') and (args.recompute_granularity == 'selective'):
         # https://arxiv.org/abs/2205.05198
-        flops_per_iteration += 4 * batch_size * (seq_len ** 2) * hidden_size * num_layers
+        flops_per_iteration += 2 * batch_size * (seq_len ** 2) * hidden_size * num_layers * (args.num_query_groups / args.num_attention_heads) + 2 * batch_size * (seq_len ** 2) * hidden_size * num_layers
+        
             
     tflops: float = flops_per_iteration / (elapsed_time_per_iter * args.world_size * (10**12))
 

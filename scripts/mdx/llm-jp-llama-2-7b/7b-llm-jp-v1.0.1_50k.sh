@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # python virtualenv
-cd /home/taishi/Megatron-LM
+cd /model/llmjp0/Megatron-LM
 source .env/bin/activate
 
 # distributed settings
@@ -13,7 +13,7 @@ echo "MASTER_ADDR=${MASTER_ADDR}"
 NODE_TYPE="a100"
 export NUM_GPU_PER_NODE=8
 
-HOSTFILE_NAME=/home/taishi/Megatron-LM/hostfile/16node
+HOSTFILE_NAME=/model/llmjp0/Megatron-LM/hostfile/16node
 
 
 NUM_NODES=16
@@ -143,7 +143,7 @@ mpirun -np $NUM_GPUS \
   --adam-beta1 0.9 \
   --adam-beta2 0.95 \
   --log-interval 1 \
-  --save-interval 50 \
+  --save-interval 500 \
   --eval-interval 100 \
   --eval-iters 10 \
   --bf16 \

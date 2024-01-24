@@ -1,0 +1,22 @@
+# pycache
+__pycache__/
+
+# venv
+.env/
+venv/
+.venv/
+
+# logs
+logs/
+
+# wandb
+wandb/
+
+# binary
+*.so
+*.o
+*.a
+/megatron/data/helpers
+
+# hostfile
+hostfile/

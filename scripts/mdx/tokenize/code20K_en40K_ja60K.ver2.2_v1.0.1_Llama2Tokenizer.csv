@@ -1,0 +1,10 @@
+/data/llm-jp-corpus/v1.0.1/merge/en_pile/en_pile_merge_1.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/en_pile_Llama2Tokenizer/en_pile_merge_1.jsonl_text_document,16813821561
+/data/llm-jp-corpus/v1.0.1/merge/en_pile/en_pile_merge_2.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/en_pile_Llama2Tokenizer/en_pile_merge_2.jsonl_text_document,16825021118
+/data/llm-jp-corpus/v1.0.1/merge/en_pile/en_pile_merge_3.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/en_pile_Llama2Tokenizer/en_pile_merge_3.jsonl_text_document,16952900250
+/data/llm-jp-corpus/v1.0.1/merge/en_pile/en_pile_merge_4.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/en_pile_Llama2Tokenizer/en_pile_merge_4.jsonl_text_document,16943850200
+/data/llm-jp-corpus/v1.0.1/merge/en_pile/en_pile_merge_5.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/en_pile_Llama2Tokenizer/en_pile_merge_5.jsonl_text_document,16874407079
+/data/llm-jp-corpus/v1.0.1/merge/en_pile/en_pile_merge_6.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/en_pile_Llama2Tokenizer/en_pile_merge_6.jsonl_text_document,16939269802
+/data/llm-jp-corpus/v1.0.1/merge/en_pile/en_pile_merge_7.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/en_pile_Llama2Tokenizer/en_pile_merge_7.jsonl_text_document,8483680205
+/data/llm-jp-corpus/v1.0.1/merge/ja_wiki/ja_wiki_merge_1.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/ja_wiki_Llama2Tokenizer/ja_wiki_merge_1_text_document,1444205466
+/data/llm-jp-corpus/v1.0.1/merge/en_wiki/en_wiki_merge_1.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/en_wiki_Llama2Tokenizer/ja_wiki_merge_1_text_document,4704152329
+/data/llm-jp-corpus/v1.0.1/merge/code_stack/code_stack_merge_1.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver2.2/code20K_en40K_ja60K/code_stack_Llama2Tokenizer/code_stack_merge_1.jsonl_text_document,8673202783

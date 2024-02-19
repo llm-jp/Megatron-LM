@@ -921,6 +921,7 @@ def _add_training_args(parser):
     group.add_argument('--checkpoint-activations', action='store_true',
                        help='Checkpoint activation to allow for training '
                        'with larger models, sequences, and batch sizes.')
+
     group.add_argument('--train-iters', type=int, default=None,
                        help='Total number of iterations to train over all '
                        'training runs. Note that either train-iters or '
@@ -1011,6 +1012,9 @@ def _add_training_args(parser):
                        help='When using manual garbage collection, disable '
                        'garbage collection at the start and the end of each '
                        'evaluation run.', dest='manual_gc_eval')
+    group.add_argument('--skip-train-iteration-range', type=str, nargs='+', default=None,
+                       help='Iteration ranges to skip. The values are one or more dash-separated ranges. e.g., 101-200 251-300.')
+    group.add_argument("--use-z-loss", action="store_true", help="use z-loss for supplement loss (Google PaLM method)")
 
     return parser
 

@@ -55,6 +55,7 @@ except ImportError:
         hyperparameters: transformer hyperparameters
 """
 
+
 class DropPath(MegatronModule):
     """Drop paths (Stochastic Depth) per sample
     (when applied in main path of residual blocks).
@@ -76,6 +77,7 @@ class DropPath(MegatronModule):
         random_tensor.floor_()  # binarize
         output = hidden_state.div(keep_prob) * random_tensor
         return output
+
 
 class ParallelMLP(MegatronModule):
     """MLP.
@@ -157,6 +159,7 @@ class ParallelMLP(MegatronModule):
         # [s, b, h]
         output, output_bias = self.dense_4h_to_h(intermediate_parallel)
         return output, output_bias
+
 
 def sinkhorn(cost, tol=0.0001):
     cost = torch.exp(cost)

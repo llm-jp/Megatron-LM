@@ -13,10 +13,17 @@ from megatron.core.dist_checkpointing.mapping import ShardedStateDict
 from megatron.core.dist_checkpointing.utils import replace_prefix_for_sharding
 from megatron.core.fusions.fused_layer_norm import FusedLayerNorm
 from megatron.core.packed_seq_params import PackedSeqParams
-from megatron.core.transformer.custom_layers.transformer_engine import (
-    TENorm,
-    get_cpu_offload_context,
-)
+
+transformer_engine_available = False
+try:
+    from megatron.core.transformer.custom_layers.transformer_engine import (
+        TENorm,
+        get_cpu_offload_context,
+    )
+    transformer_engine_available = True
+except Exception:
+    pass
+
 from megatron.core.transformer.enums import AttnMaskType
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
@@ -170,11 +177,18 @@ class TransformerBlock(MegatronModule):
 
         if self.post_process and self.post_layer_norm:
             # Final layer norm before output.
-            self.final_layernorm = TENorm(
-                config=self.config,
-                hidden_size=self.config.hidden_size,
-                eps=self.config.layernorm_epsilon,
-            )
+            if transformer_engine_available:
+                self.final_layernorm = TENorm(
+                    config=self.config,
+                    hidden_size=self.config.hidden_size,
+                    eps=self.config.layernorm_epsilon,
+                )
+            else:
+                self.final_layernorm = FusedLayerNorm(
+                    config=self.config,
+                    hidden_size=self.config.hidden_size,
+                    eps=self.config.layernorm_epsilon,
+                )
 
     def _get_layer(self, layer_number: int):
         return self.layers[layer_number]
@@ -327,7 +341,10 @@ class TransformerBlock(MegatronModule):
             rng_context = nullcontext()
 
         if self.config.fp8:
-            import transformer_engine  # To keep out TE dependency when not training in fp8
+            try:
+                import transformer_engine  # To keep out TE dependency when not training in fp8
+            except ImportError:
+                pass
 
             if self.config.fp8 == "e4m3":
                 fp8_format = transformer_engine.common.recipe.Format.E4M3

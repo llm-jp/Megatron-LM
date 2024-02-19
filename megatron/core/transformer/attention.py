@@ -9,7 +9,12 @@ from pkg_resources import packaging
 
 from megatron.core import parallel_state, tensor_parallel
 from megatron.core.models.common.embeddings.rotary_pos_embedding import apply_rotary_pos_emb
-from megatron.core.transformer.custom_layers.transformer_engine import SplitAlongDim
+try:
+    from megatron.core.transformer.custom_layers.transformer_engine import SplitAlongDim
+except Exception:
+    SplitAlongDim = None
+    pass
+
 from megatron.core.transformer.enums import AttnMaskType
 from megatron.core.transformer.identity_op import IdentityFuncOp, IdentityOp
 from megatron.core.transformer.module import MegatronModule

@@ -1418,7 +1418,10 @@ class ParallelTransformer(MegatronModule):
         self.transformer_engine_v_0_8 = False
         if self.transformer_impl == 'transformer_engine':
             global transformer_engine
-            import transformer_engine
+            try:
+                import transformer_engine
+            except ImportError:
+                pass
             from importlib.metadata import version
             from pkg_resources import packaging
 

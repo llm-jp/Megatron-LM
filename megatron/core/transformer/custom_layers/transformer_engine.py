@@ -4,7 +4,11 @@ from importlib.metadata import version
 from typing import Callable
 
 import torch
-import transformer_engine as te
+try:
+    import transformer_engine as te
+except ImportError:
+    pass
+
 from pkg_resources import packaging
 from torch import Tensor
 

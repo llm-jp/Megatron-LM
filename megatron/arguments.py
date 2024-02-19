@@ -771,6 +771,7 @@ def _add_logging_args(parser):
                        help='The wandb project name. Ignore wandb by default.')
     group.add_argument('--wandb-exp-name', type=str, default=None,
                        help='The wandb experiment name.')
+    group.add_argument("--use-mpi", action="store_true", default=False)
     group.add_argument('--wandb-entity', type=str, default=None)
     group.add_argument('--enable-one-logger', action='store_true',
                        help='If set, use one_logger to track E2E metrics'

@@ -1,15 +1,15 @@
 #!/bin/bash
-#$ -l rt_AF=4
-#$ -l h_rt=7:00:00:00
+#$ -l rt_AF=2
+#$ -l h_rt=0:00:30:00
 #$ -j y
 #$ -o outputs/llama-2-7b-base/2node/
 #$ -cwd
 
 # module load
 source /etc/profile.d/modules.sh
-module load cuda/12.1/12.1.1
-module load cudnn/8.9/8.9.5
-module load nccl/2.18/2.18.3-1
+module load cuda/11.8/11.8.0
+module load cudnn/8.9/8.9.2
+module load nccl/2.16/2.16.2-1
 module load hpcx/2.12
 
 # python virtualenv

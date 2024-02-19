@@ -4,7 +4,8 @@
 
 import math
 
-from megatron import print_rank_0
+from megatron import print_rank_0, get_args
+
 
 class OptimizerParamScheduler(object):
     """Anneals learning rate and weight decay"""
@@ -50,7 +51,6 @@ class OptimizerParamScheduler(object):
         self.step(0)
         print_rank_0('> learning rate decay style: {}'.format(self.lr_decay_style))
 
-
     def get_wd(self):
         """ Weight decay incr functions"""
         if self.num_steps > self.wd_incr_steps:
@@ -74,7 +74,6 @@ class OptimizerParamScheduler(object):
                 self.wd_incr_style))
 
         return self.start_wd + coeff * delta_wd
-
 
     def get_lr(self):
         """Learning rate decay functions from:
@@ -123,16 +122,17 @@ class OptimizerParamScheduler(object):
 
         return self.min_lr + coeff * delta_lr
 
-
-    def step(self, increment):
+    def step(self, increment, token_num=None):
         """Set lr for all parameters groups."""
+        if token_num is None:
+            args = get_args()
+            token_num = args.consumed_train_tokens
         self.num_steps += increment
         new_lr = self.get_lr()
         new_wd = self.get_wd()
         for group in self.optimizer.param_groups:
             group['lr'] = new_lr * group.get('lr_mult', 1.0)
             group['weight_decay'] = new_wd * group.get('wd_mult', 1.0)
-
 
     def state_dict(self):
         state_dict = {

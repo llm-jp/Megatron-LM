@@ -767,12 +767,11 @@ def _add_logging_args(parser):
     group.add_argument('--log-world-size-to-tensorboard',
                        action='store_true',
                        help='Enable world size logging to tensorboard.')
-    group.add_argument('--wandb-project', type=str, default='',
+    group.add_argument('--wandb-project', type=str, default=None,
                        help='The wandb project name. Ignore wandb by default.')
-    group.add_argument('--wandb-exp-name', type=str, default='',
+    group.add_argument('--wandb-exp-name', type=str, default=None,
                        help='The wandb experiment name.')
-    group.add_argument('--wandb-save-dir', type=str, default='',
-                       help='Path to save the wandb results locally.')
+    group.add_argument('--wandb-entity', type=str, default=None)
     group.add_argument('--enable-one-logger', action='store_true',
                        help='If set, use one_logger to track E2E metrics'
                        'Note that one_logger is an internal tool and not available externally. '

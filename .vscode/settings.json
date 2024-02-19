@@ -18,6 +18,7 @@
     "swiglu",
     "tensorstore",
     "tflops",
+    "throughputs",
     "wqkv",
     "zarr"
   ],

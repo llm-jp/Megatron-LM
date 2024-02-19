@@ -19,6 +19,7 @@ except ImportError:
 from megatron import (
     get_args,
     get_adlr_autoresume,
+    get_num_microbatches,
 )
 from megatron.core import DistributedDataParallel as DDP
 from megatron.core import mpu
@@ -259,9 +260,11 @@ def print_rank_0(message):
     else:
         print(message, flush=True)
 
+
 def is_last_rank():
     return torch.distributed.get_rank() == (
         torch.distributed.get_world_size() - 1)
+
 
 def print_rank_last(message):
     """If distributed is initialized, print only on last rank."""
@@ -277,77 +280,141 @@ def get_batch_on_this_tp_rank(data_iterator):
     args = get_args()
 
     def _broadcast(item):
-       torch.distributed.broadcast(item, mpu.get_tensor_model_parallel_src_rank(), group=mpu.get_tensor_model_parallel_group())
+        torch.distributed.broadcast(item, mpu.get_tensor_model_parallel_src_rank(), group=mpu.get_tensor_model_parallel_group())
 
     if mpu.get_tensor_model_parallel_rank() == 0:
 
-       if data_iterator is not None:
-           data = next(data_iterator)
-       else:
-           data = None
+        if data_iterator is not None:
+            data = next(data_iterator)
+        else:
+            data = None
 
-       batch = {
-           'tokens': data["tokens"].cuda(non_blocking = True),
-           'labels': data["labels"].cuda(non_blocking = True),
-           'loss_mask': data["loss_mask"].cuda(non_blocking = True),
-           'attention_mask': data["attention_mask"].cuda(non_blocking = True),
-           'position_ids': data["position_ids"].cuda(non_blocking = True)
-       }
+        batch = {
+            'tokens': data["tokens"].cuda(non_blocking = True),
+            'labels': data["labels"].cuda(non_blocking = True),
+            'loss_mask': data["loss_mask"].cuda(non_blocking = True),
+            'attention_mask': data["attention_mask"].cuda(non_blocking = True),
+            'position_ids': data["position_ids"].cuda(non_blocking = True)
+        }
 
-       if args.pipeline_model_parallel_size == 1:
-           _broadcast(batch['tokens'])
-           _broadcast(batch['labels'])
-           _broadcast(batch['loss_mask'])
-           _broadcast(batch['attention_mask'])
-           _broadcast(batch['position_ids'])
+        if args.pipeline_model_parallel_size == 1:
+            _broadcast(batch['tokens'])
+            _broadcast(batch['labels'])
+            _broadcast(batch['loss_mask'])
+            _broadcast(batch['attention_mask'])
+            _broadcast(batch['position_ids'])
 
-       elif mpu.is_pipeline_first_stage():
-           _broadcast(batch['tokens'])
-           _broadcast(batch['attention_mask'])
-           _broadcast(batch['position_ids'])
+        elif mpu.is_pipeline_first_stage():
+            _broadcast(batch['tokens'])
+            _broadcast(batch['attention_mask'])
+            _broadcast(batch['position_ids'])
 
-       elif mpu.is_pipeline_last_stage():
-           _broadcast(batch['labels'])
-           _broadcast(batch['loss_mask'])
-           _broadcast(batch['attention_mask'])
+        elif mpu.is_pipeline_last_stage():
+            _broadcast(batch['labels'])
+            _broadcast(batch['loss_mask'])
+            _broadcast(batch['attention_mask'])
 
-    else:
+        else:
 
-       tokens=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
-       labels=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
-       loss_mask=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.float32 , device = torch.cuda.current_device())
-       attention_mask=torch.empty((args.micro_batch_size,1,args.seq_length,args.seq_length), dtype = torch.bool , device = torch.cuda.current_device())
-       position_ids=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+        tokens=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+        labels=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+        loss_mask=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.float32 , device = torch.cuda.current_device())
+        attention_mask=torch.empty((args.micro_batch_size,1,args.seq_length,args.seq_length), dtype = torch.bool , device = torch.cuda.current_device())
+        position_ids=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
 
-       if args.pipeline_model_parallel_size == 1:
-           _broadcast(tokens)
-           _broadcast(labels)
-           _broadcast(loss_mask)
-           _broadcast(attention_mask)
-           _broadcast(position_ids)
- 
-       elif mpu.is_pipeline_first_stage():
-           labels=None
-           loss_mask=None
-   
-           _broadcast(tokens)
-           _broadcast(attention_mask)
-           _broadcast(position_ids)
+        if args.pipeline_model_parallel_size == 1:
+            _broadcast(tokens)
+            _broadcast(labels)
+            _broadcast(loss_mask)
+            _broadcast(attention_mask)
+            _broadcast(position_ids)
 
-       elif mpu.is_pipeline_last_stage():
-           tokens=None
-           position_ids=None
-    
-           _broadcast(labels)
-           _broadcast(loss_mask)
-           _broadcast(attention_mask)
- 
-       batch = {
-           'tokens': tokens,
-           'labels': labels,
-           'loss_mask': loss_mask,
-           'attention_mask': attention_mask,
-           'position_ids': position_ids
-       }
+        elif mpu.is_pipeline_first_stage():
+            labels=None
+            loss_mask=None
+
+            _broadcast(tokens)
+            _broadcast(attention_mask)
+            _broadcast(position_ids)
+
+        elif mpu.is_pipeline_last_stage():
+            tokens=None
+            position_ids=None
+
+            _broadcast(labels)
+            _broadcast(loss_mask)
+            _broadcast(attention_mask)
+
+        batch = {
+            'tokens': tokens,
+            'labels': labels,
+            'loss_mask': loss_mask,
+            'attention_mask': attention_mask,
+            'position_ids': position_ids
+        }
 
     return batch
+
+
+import torch.distributed as torch_distributed
+import argparse
+
+def throughput_calculator(
+    args: argparse.Namespace,
+    iteration_time: float,
+    total_iterations: int,
+) -> tuple[float, float, int, int]:
+    gpus_per_model: int = torch_distributed.get_world_size(group=mpu.get_model_parallel_group())
+    batch_size: int = args.micro_batch_size * get_num_microbatches() * args.data_parallel_size
+    samples_per_model: int = batch_size * args.seq_length
+    model_replica_count: int = torch_distributed.get_world_size() // gpus_per_model
+    elapsed_time_per_iter = iteration_time / total_iterations
+    samples_per_second: float = batch_size / elapsed_time_per_iter
+
+    # flops calculator
+    hidden_size: int = args.hidden_size
+    num_layers: int = args.num_layers
+    vocab_size: int = args.padded_vocab_size
+    intermediate_size: int = args.ffn_hidden_size
+
+    # General TFLOPs formula (borrowed from Equation 3 in Section 5.1 of
+    # https://arxiv.org/pdf/2104.04473.pdf).
+    # The factor of 4 is when used with activation check-pointing,
+    # SwiGLU: https://github.com/bigscience-workshop/Megatron-DeepSpeed/pull/283
+    # otherwise it will be 3.
+    checkpoint_activations_factor: int = 3
+    selective_recompute_factor: int = 1
+    if hasattr(args, 'checkpoint_activations') and args.checkpoint_activations:
+        checkpoint_activations_factor = 4
+    if hasattr(args, 'recompute_granularity') and (args.recompute_granularity == 'full'):
+        checkpoint_activations_factor = 4
+    if hasattr(args, 'recompute_granularity') and (args.recompute_granularity == 'selective'):
+        # add forward attention matrix computation & attention over Values (later)
+        checkpoint_activations_factor = 3
+        selective_recompute_factor = 2
+
+    seq_len: int = args.seq_length
+    if hasattr(args, 'actual_seq_length'):
+        seq_len: int = args.actual_seq_length
+
+    activation_function_factor: int = 4  # GELU
+    if args.swiglu:
+        activation_function_factor = 4 + 2  # SWiGLU (upscaling + down scaling)
+
+    # 2: post-attention linear projection
+    # 2 * 3: Key, Query, and Value transformation
+    # / args.num_query_groups : GQA: Grouped Query Attention (default: num_query_groups=1)
+    flops_per_iteration: float = checkpoint_activations_factor * ((
+        (2 + (2 * 3) + activation_function_factor * (intermediate_size / hidden_size)) * batch_size * seq_len * num_layers * (hidden_size**2)
+    ) + (
+        ((  # Attention matrix & attention over values
+            4 * batch_size * (seq_len ** 2) * hidden_size
+        ) / args.num_query_groups * selective_recompute_factor
+        ) +  # noqa: W504
+        # lm-head: logit layer
+        2 * batch_size * seq_len * hidden_size * vocab_size)
+    )
+
+    tflops: float = flops_per_iteration / (elapsed_time_per_iter * args.world_size * (10**12))
+
+    return samples_per_second, tflops, samples_per_model, model_replica_count

@@ -1,10 +1,11 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 """Megatron global variables."""
-
+import argparse
 import os
 import sys
 import torch
+import typing
 
 from megatron import dist_signal_handler
 from megatron.core import Timers
@@ -22,10 +23,11 @@ _GLOBAL_ADLR_AUTORESUME = None
 _GLOBAL_TIMERS = None
 _GLOBAL_SIGNAL_HANDLER = None
 
+
 def get_args():
     """Return arguments."""
     _ensure_var_is_initialized(_GLOBAL_ARGS, 'args')
-    return _GLOBAL_ARGS
+    return typing.cast(argparse.Namespace, _GLOBAL_ARGS)
 
 
 def get_retro_args():
@@ -69,6 +71,7 @@ def get_one_logger():
     to check if it is initialized."""
     return _GLOBAL_ONE_LOGGER
 
+
 def get_adlr_autoresume():
     """ADLR autoresume object. It can be None so no need
     to check if it is initialized."""
@@ -78,7 +81,7 @@ def get_adlr_autoresume():
 def get_timers():
     """Return timers."""
     _ensure_var_is_initialized(_GLOBAL_TIMERS, 'timers')
-    return _GLOBAL_TIMERS
+    return typing.cast(Timers, _GLOBAL_TIMERS)
 
 
 def get_signal_handler():
@@ -90,7 +93,6 @@ def _set_signal_handler():
     global _GLOBAL_SIGNAL_HANDLER
     _ensure_var_is_not_initialized(_GLOBAL_SIGNAL_HANDLER, 'signal handler')
     _GLOBAL_SIGNAL_HANDLER = dist_signal_handler.DistributedSignalHandler().__enter__()
-
 
 
 def set_global_variables(args, build_tokenizer=True):
@@ -168,28 +170,43 @@ def _set_tensorboard_writer(args):
                   'no TensorBoard logs will be written.', flush=True)
 
 
-def _set_wandb_writer(args):
+def _set_wandb_writer(args: argparse.Namespace) -> None:
+    """Set wandb writer."""
     global _GLOBAL_WANDB_WRITER
-    _ensure_var_is_not_initialized(_GLOBAL_WANDB_WRITER,
-                                   'wandb writer')
-    if getattr(args, 'wandb_project', '') and args.rank == (args.world_size - 1):
-        if args.wandb_exp_name == '':
-            raise ValueError("Please specify the wandb experiment name!")
+    _ensure_var_is_not_initialized(_GLOBAL_WANDB_WRITER, "wandb writer")  # type: ignore
 
-        import wandb
-        if args.wandb_save_dir:
-            save_dir = args.wandb_save_dir
-        else:
-            # Defaults to the save dir.
-            save_dir = os.path.join(args.save, 'wandb')
-        wandb_kwargs = {
-            'dir': save_dir,
-            'name': args.wandb_exp_name,
-            'project': args.wandb_project,
-            'config': vars(args)}
-        os.makedirs(wandb_kwargs['dir'], exist_ok=True)
-        wandb.init(**wandb_kwargs)
-        _GLOBAL_WANDB_WRITER = wandb
+    if (
+        hasattr(args, "wandb_name")
+        and (args.wandb_name or args.wandb_id)
+        and args.rank == (args.world_size - 1)
+    ):
+        try:
+            import wandb
+            from datetime import datetime
+
+            now = datetime.now()
+            now = now.strftime("%Y-%m-%d-%H-%M-%S")
+            exp_name = args.wandb_name + "-" + now
+            entity: str = args.wandb_entity
+            wandb_input = {
+                "entity": entity,
+                "name": exp_name,
+                "config": args,
+                "project": args.wandb_project,
+            }
+            if args.wandb_id is not None:
+                wandb_input["id"] = args.wandb_id
+                wandb_input["resume"] = "must"
+            wandb.init(**wandb_input)
+            _GLOBAL_WANDB_WRITER = True
+            print("> wandb ...")
+        except ModuleNotFoundError:
+            print(
+                "WARNING: wandb writing requested but is not "
+                "available (are you using PyTorch 1.1.0 or later?), "
+                "no wandb logs will be written.",
+                flush=True,
+            )
 
 
 def _set_one_logger(args):
@@ -211,6 +228,7 @@ def _set_one_logger(args):
                   'tracking. Try pip install '
                   '--index-url=https://sc-hw-artf.nvidia.com/api/pypi/hwinf-ml-pypi/simple'
                   ' one_logger to install it')
+
 
 def _set_adlr_autoresume(args):
     """Initialize ADLR autoresume."""

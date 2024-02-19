@@ -290,11 +290,11 @@ def get_batch_on_this_tp_rank(data_iterator):
             data = None
 
         batch = {
-            'tokens': data["tokens"].cuda(non_blocking = True),
-            'labels': data["labels"].cuda(non_blocking = True),
-            'loss_mask': data["loss_mask"].cuda(non_blocking = True),
-            'attention_mask': data["attention_mask"].cuda(non_blocking = True),
-            'position_ids': data["position_ids"].cuda(non_blocking = True)
+            'tokens': data["tokens"].cuda(non_blocking=True),
+            'labels': data["labels"].cuda(non_blocking=True),
+            'loss_mask': data["loss_mask"].cuda(non_blocking=True),
+            'attention_mask': data["attention_mask"].cuda(non_blocking=True),
+            'position_ids': data["position_ids"].cuda(non_blocking=True)
         }
 
         if args.pipeline_model_parallel_size == 1:
@@ -314,13 +314,32 @@ def get_batch_on_this_tp_rank(data_iterator):
             _broadcast(batch['loss_mask'])
             _broadcast(batch['attention_mask'])
 
-        else:
+    else:
 
-        tokens=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
-        labels=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
-        loss_mask=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.float32 , device = torch.cuda.current_device())
-        attention_mask=torch.empty((args.micro_batch_size,1,args.seq_length,args.seq_length), dtype = torch.bool , device = torch.cuda.current_device())
-        position_ids=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+        tokens = torch.empty(
+            (args.micro_batch_size, args.seq_length),
+            dtype=torch.int64,
+            device=torch.cuda.current_device()
+        )
+        labels = torch.empty(
+            (args.micro_batch_size, args.seq_length),
+            dtype=torch.int64,
+            device=torch.cuda.current_device()
+        )
+        loss_mask = torch.empty(
+            (args.micro_batch_size, args.seq_length),
+            dtype=torch.float32 ,
+            device=torch.cuda.current_device()
+        )
+        attention_mask = torch.empty(
+            (args.micro_batch_size, 1, args.seq_length, args.seq_length),
+            dtype=torch.bool , device=torch.cuda.current_device()
+        )
+        position_ids = torch.empty(
+            (args.micro_batch_size, args.seq_length),
+            dtype=torch.int64,
+            device=torch.cuda.current_device()
+        )
 
         if args.pipeline_model_parallel_size == 1:
             _broadcast(tokens)
@@ -330,16 +349,16 @@ def get_batch_on_this_tp_rank(data_iterator):
             _broadcast(position_ids)
 
         elif mpu.is_pipeline_first_stage():
-            labels=None
-            loss_mask=None
+            labels = None
+            loss_mask = None
 
             _broadcast(tokens)
             _broadcast(attention_mask)
             _broadcast(position_ids)
 
         elif mpu.is_pipeline_last_stage():
-            tokens=None
-            position_ids=None
+            tokens = None
+            position_ids = None
 
             _broadcast(labels)
             _broadcast(loss_mask)
@@ -358,6 +377,7 @@ def get_batch_on_this_tp_rank(data_iterator):
 
 import torch.distributed as torch_distributed
 import argparse
+
 
 def throughput_calculator(
     args: argparse.Namespace,
@@ -400,19 +420,19 @@ def throughput_calculator(
     activation_function_factor: int = 4  # GELU
     if args.swiglu:
         activation_function_factor = 4 + 2  # SWiGLU (upscaling + down scaling)
-    gqa_num_query_groups: int = 1
+    gqa_group_size: int = 1
     if args.group_query_attention:  # GQA
-        gqa_num_query_groups = args.num_query_groups
+        gqa_group_size = args.num_attention_heads // args.num_query_groups
 
     # 2: post-attention linear projection
     # 2 * 3: Key, Query, and Value transformation
-    #  / gqa_num_query_groups : GQA: Grouped Query Attention (default: gqa_num_query_groups=1)
+    # / gqa_group_size : GQA: Grouped Query Attention (default: gqa_group_size=1)
     flops_per_iteration: float = checkpoint_activations_factor * ((
         (2 + (2 * 3) + activation_function_factor * (intermediate_size / hidden_size)) * batch_size * seq_len * num_layers * (hidden_size**2)
     ) + (
         ((  # Attention matrix & attention over values
             4 * batch_size * (seq_len ** 2) * hidden_size
-        ) / gqa_num_query_groups * selective_recompute_factor
+        ) / gqa_group_size * selective_recompute_factor
         ) +  # noqa: W504
         # lm-head: logit layer
         2 * batch_size * seq_len * hidden_size * vocab_size)

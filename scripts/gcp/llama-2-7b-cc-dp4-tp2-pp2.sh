@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=llama
+#SBATCH --time=0:30:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
 #SBATCH --nodes 2
@@ -10,6 +11,7 @@
 
 # module load
 module load cuda/12.1
+module load cudnn/8.9.7
 
 # python virtualenv
 source .env/bin/activate

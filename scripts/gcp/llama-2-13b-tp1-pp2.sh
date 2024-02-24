@@ -3,7 +3,7 @@
 #SBATCH --time=0:30:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
-#SBATCH --nodes 2
+#SBATCH --nodes 4
 #SBATCH --gpus-per-node=8
 #SBATCH --ntasks-per-node=8
 #SBATCH --output=outputs/%x-%j.out

@@ -6,8 +6,8 @@
 #SBATCH --nodes 4
 #SBATCH --gpus-per-node=8
 #SBATCH --ntasks-per-node=8
-#SBATCH --output=outputs/%x-%j.out
-#SBATCH --error=outputs/%x-%j.out
+#SBATCH --output=outputs/all-reduce-pef/%x-%j.out
+#SBATCH --error=outputs/all-reduce-pef/%x-%j.out
 
 # module load
 module load cuda/12.1

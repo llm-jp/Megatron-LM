@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=llama
+#SBATCH --job-name=llama-2-13b
 #SBATCH --time=0:30:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
 #SBATCH --nodes 4
 #SBATCH --gpus-per-node=8
 #SBATCH --ntasks-per-node=8
-#SBATCH --output=outputs/%x-%j.out
-#SBATCH --error=outputs/%x-%j.out
+#SBATCH --output=outputs/llama-2-13b/%x-%j.out
+#SBATCH --error=outputs/llama-2-13b/%x-%j.out
 
 set -e
 

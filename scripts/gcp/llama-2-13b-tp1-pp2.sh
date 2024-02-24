@@ -9,9 +9,14 @@
 #SBATCH --output=outputs/%x-%j.out
 #SBATCH --error=outputs/%x-%j.out
 
+set -e
+
 # module load
 module load cuda/12.1
 module load cudnn/8.9.7
+
+# open file limit
+ulimit -n 65536 1048576
 
 # python virtualenv
 source .env/bin/activate

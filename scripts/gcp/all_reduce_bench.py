@@ -8,7 +8,7 @@ TRIALS = 5
 
 # 6GB
 N = 500000
-M = 500 * 18
+M = 500 * 6
 
 
 def timed_allreduce(mat):

@@ -120,7 +120,6 @@ class _VocabParallelCrossEntropy(torch.autograd.Function):
     def backward(ctx, grad_output):
 
         # Retreive tensors from the forward path.
-        softmax, target_mask, masked_target_1d = ctx.saved_tensors
         label_smoothing, vocab_size = ctx.label_smoothing, ctx.vocab_size
         use_z_loss = ctx.use_z_loss
         if use_z_loss:

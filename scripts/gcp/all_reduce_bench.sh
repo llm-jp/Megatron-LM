@@ -12,6 +12,7 @@
 # module load
 module load cuda/12.1
 module load cudnn/8.9.7
+module load hpcx/2.17.1
 
 # python virtualenv
 source .env/bin/activate

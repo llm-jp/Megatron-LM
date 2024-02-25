@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=llama-2-7b
-#SBATCH --time=0:30:00
+#SBATCH --time=6:00:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
 #SBATCH --nodes 4
@@ -12,6 +12,7 @@
 # module load
 module load cuda/12.1
 module load cudnn/8.9.7
+module load hpcx/2.17.1
 
 # open file limit
 ulimit -n 65536 1048576

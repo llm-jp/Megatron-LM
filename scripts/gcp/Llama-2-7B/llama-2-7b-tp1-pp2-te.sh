@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=llama-2-7b
-#SBATCH --time=0:50:00
+#SBATCH --time=1:00:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
 #SBATCH --nodes 4
@@ -93,7 +93,7 @@ PIPELINE_PARALLEL_SIZE=2 # num layers 32: Llama-2 7B
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
 # training config
-MICRO_BATCH_SIZE=1
+MICRO_BATCH_SIZE=2
 GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=25000 # e.g. llama: 1T tokens / 4M tokens_per_batch = 250000 steps
 # 今回は約100B Tokensなので 1/10
@@ -106,7 +106,7 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/home/kazuki/hf-checkpoints/Llama-2-7b-hf/tokenizer.model
-CHECKPOINT_SAVE_DIR=/home/kazuki/checkpoints/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-no-te
+CHECKPOINT_SAVE_DIR=/home/kazuki/checkpoints/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-debug
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -181,6 +181,8 @@ mpirun -np $NUM_GPUS \
   --use-flash-attn \
   --recompute-activations \
   --recompute-granularity "selective" \
+  --attention-softmax-in-fp32 \
+  --transformer-impl "transformer_engine" \
   --use-mpi \
   --wandb-name ${JOB_NAME} \
   --wandb-project "geniac-megatron-lm-3d" \

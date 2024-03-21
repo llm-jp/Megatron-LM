@@ -9,6 +9,8 @@
 #SBATCH --output=outputs/llama-2-7b/%x-%j.out
 #SBATCH --error=outputs/llama-2-7b/%x-%j.out
 
+set -e
+
 # module load
 module load cuda/12.1
 module load cudnn/8.9.7
@@ -105,13 +107,13 @@ WEIGHT_DECAY=0.1
 GRAD_CLIP=1
 
 # model config
-TOKENIZER_MODEL=/home/kazuki/hf-checkpoints/Llama-2-7b-hf/tokenizer.model
-CHECKPOINT_SAVE_DIR=/home/kazuki/checkpoints/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-debug
+TOKENIZER_MODEL=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-7b-hf/tokenizer.model
+CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-debug
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
 # data config
-DATASET_DIR=/home/kazuki/datasets
+DATASET_DIR=/home/ext_kazuki_fujii_turing_motors_c/datasets
 
 DATA_PATH=""
 

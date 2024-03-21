@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=llama-2-13b
-#SBATCH --time=0:30:00
+#SBATCH --job-name=llama-2-7b
+#SBATCH --time=1:00:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
 #SBATCH --nodes 4
 #SBATCH --gpus-per-node=8
 #SBATCH --ntasks-per-node=8
-#SBATCH --output=outputs/llama-2-13b/%x-%j.out
-#SBATCH --error=outputs/llama-2-13b/%x-%j.out
+#SBATCH --output=outputs/llama-2-7b/%x-%j.out
+#SBATCH --error=outputs/llama-2-7b/%x-%j.out
 
 set -e
 
@@ -82,16 +82,16 @@ NUM_GPUS=$((${NUM_NODES} * ${NUM_GPU_PER_NODE}))
 
 
 # model config
-# llama-2-13b: https://huggingface.co/meta-llama/Llama-2-13b-hf/blob/main/config.json
-HIDDEN_SIZE=5120
-FFN_HIDDEN_SIZE=13824 # intermediate size (HuggingFace)
-NUM_LAYERS=40
-NUM_HEADS=40
+# llama-2-7b: https://huggingface.co/meta-llama/Llama-2-7b-hf/blob/main/config.json
+HIDDEN_SIZE=4096
+FFN_HIDDEN_SIZE=11008 # intermediate size (HuggingFace)
+NUM_LAYERS=32
+NUM_HEADS=32
 SEQ_LENGTH=4096
 
 # distributed settings
 TENSOR_PARALLEL_SIZE=2   # fixed
-PIPELINE_PARALLEL_SIZE=2 # num layers 40: Llama-2 13B
+PIPELINE_PARALLEL_SIZE=1 # num layers 32: Llama-2 7B
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
 # training config
@@ -107,8 +107,8 @@ WEIGHT_DECAY=0.1
 GRAD_CLIP=1
 
 # model config
-TOKENIZER_MODEL=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-13b-hf/tokenizer.model
-CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/Llama-2-13b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
+TOKENIZER_MODEL=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-7b-hf/tokenizer.model
+CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-debug
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -121,7 +121,7 @@ DATA_PATH=""
 DATA_PATH="${DATA_PATH} 2659052072 ${DATASET_DIR}/ja_wiki_merged_train_text_document"
 
 # job name
-JOB_NAME="llama-2-13b-base-okazaki-lab-cc-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGTH}s-DP=${DATA_PARALLEL_SIZE}-TP=${TENSOR_PARALLEL_SIZE}-PP=${PIPELINE_PARALLEL_SIZE}-BS=${GLOBAL_BATCH_SIZE}-LR=${LR}-MINLR=${MIN_LR}-WARMUP=${LR_WARMUP_STEPS}-WD=${WEIGHT_DECAY}-GC=${GRAD_CLIP}"
+JOB_NAME="llama-2-7b-base-okazaki-lab-cc-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGTH}s-DP=${DATA_PARALLEL_SIZE}-TP=${TENSOR_PARALLEL_SIZE}-PP=${PIPELINE_PARALLEL_SIZE}-BS=${GLOBAL_BATCH_SIZE}-LR=${LR}-MINLR=${MIN_LR}-WARMUP=${LR_WARMUP_STEPS}-WD=${WEIGHT_DECAY}-GC=${GRAD_CLIP}"
 
 # --norm-epsilon 1e-5 : conifg.json (RMS norm)
 
@@ -167,7 +167,7 @@ mpirun -np $NUM_GPUS \
   --adam-beta1 0.9 \
   --adam-beta2 0.95 \
   --log-interval 1 \
-  --save-interval 500 \
+  --save-interval 100 \
   --eval-interval 100 \
   --eval-iters 10 \
   --bf16 \
@@ -186,7 +186,6 @@ mpirun -np $NUM_GPUS \
   --attention-softmax-in-fp32 \
   --transformer-impl "transformer_engine" \
   --use-mpi \
-  --use-z-loss \
   --wandb-name ${JOB_NAME} \
   --wandb-project "geniac-megatron-lm-3d" \
   --wandb-entity "okoge"

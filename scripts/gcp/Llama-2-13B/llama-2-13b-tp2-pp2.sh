@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=llama-2-13b
-#SBATCH --time=0:30:00
+#SBATCH --time=5:00:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
 #SBATCH --nodes 4
@@ -173,6 +173,7 @@ mpirun -np $NUM_GPUS \
   --bf16 \
   --untie-embeddings-and-output-weights \
   --use-rotary-position-embeddings \
+  --use-embedding-scaling \
   --normalization RMSNorm \
   --norm-epsilon 1e-5 \
   --no-position-embedding \

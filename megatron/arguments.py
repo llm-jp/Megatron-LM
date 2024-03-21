@@ -662,6 +662,7 @@ def _add_network_size_args(parser):
     group.add_argument('--rotary-interleaved', action='store_true', help='Use interleaved rotary embedding.')
     group.add_argument('--rotary-seq-len-interpolation-factor', type=int, default=None,
                        help='Sequence length interpolation factor for rotary embeddings.')
+    group.add_argument("--use-embedding-scaling", action="store_true")
     group.add_argument('--no-position-embedding',
                        action='store_false',
                        help='Disable position embedding. Deprecated: use --position-embedding-type',

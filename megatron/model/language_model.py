@@ -73,7 +73,8 @@ def get_language_model(config, num_tokentypes, add_pooler,
         decoder_attn_mask_type=decoder_attn_mask_type,
         add_pooler=add_pooler,
         pre_process=pre_process,
-        post_process=post_process
+        post_process=post_process,
+        use_embedding_scaling=args.use_embedding_scaling,
     )
     # key used for checkpoints.
     language_model_key = 'language_model'
@@ -334,7 +335,9 @@ class TransformerLanguageModel(MegatronModule):
                  decoder_attn_mask_type=AttnMaskType.causal,
                  add_pooler=False,
                  pre_process=True,
-                 post_process=True):
+                 post_process=True,
+                 use_embedding_scaling=False,
+                 ):
         args = get_args()
         # TODO: passing share_embeddings_and_output_weights=False will not work correctly for T5 and embeddings will not be synced. Fix later for T5.
         if args.untie_embeddings_and_output_weights: assert not add_decoder
@@ -353,6 +356,7 @@ class TransformerLanguageModel(MegatronModule):
         self.encoder_hidden_state = None
         self.add_retriever = args.retro_add_retriever
         self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
+        self.use_embedding_scaling = use_embedding_scaling
 
         # Embeddings.
         if self.pre_process:
@@ -467,6 +471,9 @@ class TransformerLanguageModel(MegatronModule):
         if self.pre_process:
             encoder_input = self.embedding(enc_input_ids, enc_position_ids,
                                            tokentype_ids=tokentype_ids)
+            if self.use_embedding_scaling:
+                # Scale the embedding by the dimension size.
+                encoder_input = encoder_input * self.hidden_size ** -0.5
         else:
             encoder_input = None
 

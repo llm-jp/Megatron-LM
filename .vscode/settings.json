@@ -1,26 +1,6 @@
 {
   "cSpell.words": [
-    "accum",
-    "arange",
-    "gelu",
-    "huggingface",
-    "layernorm",
-    "logit",
-    "microbatches",
-    "OMPI",
-    "prescale",
-    "pretraining",
-    "Rampup",
-    "sentencepiece",
-    "seqlen",
-    "sharded",
-    "silu",
-    "swiglu",
-    "tensorstore",
-    "tflops",
-    "throughputs",
-    "wqkv",
-    "zarr"
+    "OMPI"
   ],
   "files.watcherExclude": {
     "**/.git/objects/**": true,

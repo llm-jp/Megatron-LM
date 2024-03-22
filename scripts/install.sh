@@ -32,3 +32,6 @@ pip install flash-attn --no-build-isolation
 
 # huggingface install
 pip install transformers accelerate zarr tensorstore
+
+# transformer engine
+pip install git+https://github.com/NVIDIA/TransformerEngine.git@stable

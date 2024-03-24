@@ -1,0 +1,5 @@
+/data/llm-jp-corpus/v1.0.1/merge/val//code_stack_validation_0.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver3.0/100k/code_stack_validation_0.jsonl_text_document,73520492
+/data/llm-jp-corpus/v1.0.1/merge/val//en_pile_validation_0.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver3.0/100k/en_pile_validation_0.jsonl_text_document,35071027
+/data/llm-jp-corpus/v1.0.1/merge/val//en_wiki_validation_0.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver3.0/100k/en_wiki_validation_0.jsonl_text_document,946215
+/data/llm-jp-corpus/v1.0.1/merge/val//ja_cc_validation_0.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver3.0/100k/ja_cc_validation_0.jsonl_text_document,110532527
+/data/llm-jp-corpus/v1.0.1/merge/val//ja_wiki_validation_0.jsonl,/data/llm-jp-corpus/v1.0.1/merge/binarized/ver3.0/100k/ja_wiki_validation_0.jsonl_text_document,888372

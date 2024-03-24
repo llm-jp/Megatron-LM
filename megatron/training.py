@@ -17,6 +17,7 @@ import time
 # The earliest we can measure the start time.
 _TRAIN_START_TIME = time.time()
 import torch
+import torch.distributed as torch_distributed
 import wandb
 
 from megatron import get_args
@@ -59,6 +60,31 @@ def print_datetime(string):
     torch.distributed.barrier()
     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print_rank_0('[' + string + '] datetime: {} '.format(time_str))
+
+
+import requests
+
+
+def check_maintenance_event() -> bool:
+    # GCP metadata request URL
+    URL = "http://metadata.google.internal/computeMetadata/v1/instance/maintenance-event"
+    headers = {"Metadata-Flavor": "Google"}
+
+    try:
+        response = requests.get(URL, headers=headers)
+        # status code check
+        if response.status_code == 200:
+            event = response.text
+            if "TERMINATE_ON_HOST_MAINTENANCE" in event:
+                return True
+            else:
+                return False
+        else:
+            print("request is failed. status code:", response.status_code)
+            return False
+    except Exception as e:
+        print("exception occurs when requesting:", e)
+        return False
 
 
 def num_floating_point_operations(args, batch_size):
@@ -1168,8 +1194,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 exit = True
                 break
 
-        if args.save and args.save_interval and \
-           iteration % args.save_interval == 0:
+        maintenance_detected = check_maintenance_event()
+        maintenance_tensor = torch.tensor(maintenance_detected, dtype=torch.int)
+        torch_distributed.all_reduce(maintenance_tensor, op=torch_distributed.ReduceOp.MAX)
+
+        if args.save and args.save_interval and (
+            iteration % args.save_interval == 0 or maintenance_tensor.item() > 0
+        ):
             timers('interval-time').stop()
             save_checkpoint_and_time(iteration, model, optimizer,
                                      opt_param_scheduler,

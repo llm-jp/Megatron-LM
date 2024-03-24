@@ -1195,7 +1195,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 break
 
         maintenance_detected = check_maintenance_event()
-        maintenance_tensor = torch.tensor(maintenance_detected, dtype=torch.int)
+        maintenance_tensor = torch.tensor(maintenance_detected, dtype=torch.int).cuda(torch.cuda.current_device())
         torch_distributed.all_reduce(maintenance_tensor, op=torch_distributed.ReduceOp.MAX)
 
         if args.save and args.save_interval and (

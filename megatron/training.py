@@ -709,57 +709,38 @@ def training_log(
         timers.write(timers_to_log, writer, iteration,
                      normalizer=total_iterations)
     if writer and (iteration % args.tensorboard_log_interval == 0):
-        if wandb_writer:
-            wandb_writer.log({'samples vs steps': args.consumed_train_samples},
-                             iteration)
         if args.log_learning_rate_to_tensorboard:
             writer.add_scalar('learning-rate', learning_rate, iteration)
             writer.add_scalar('learning-rate vs samples', learning_rate,
                               args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'learning-rate': learning_rate}, iteration)
         if args.log_batch_size_to_tensorboard:
             writer.add_scalar('batch-size', batch_size, iteration)
             writer.add_scalar('batch-size vs samples', batch_size,
                               args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'batch-size': batch_size}, iteration)
         for key in loss_dict:
             writer.add_scalar(key , loss_dict[key], iteration)
             writer.add_scalar(key + ' vs samples', loss_dict[key],
                               args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({key: loss_dict[key]}, iteration)
         if args.log_loss_scale_to_tensorboard:
             writer.add_scalar('loss-scale', loss_scale, iteration)
             writer.add_scalar('loss-scale vs samples', loss_scale,
                               args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'loss-scale': loss_scale}, iteration)
         if args.log_world_size_to_tensorboard:
             writer.add_scalar('world-size', args.world_size, iteration)
             writer.add_scalar('world-size vs samples', args.world_size,
                               args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'world-size': args.world_size}, iteration)
         if grad_norm is not None:
             writer.add_scalar('grad-norm', grad_norm, iteration)
             writer.add_scalar('grad-norm vs samples', grad_norm,
                               args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'grad-norm': grad_norm}, iteration)
         if num_zeros_in_grad is not None:
             writer.add_scalar('num-zeros', num_zeros_in_grad, iteration)
             writer.add_scalar('num-zeros vs samples', num_zeros_in_grad,
                               args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'num-zeros': num_zeros_in_grad}, iteration)
         if params_norm is not None:
             writer.add_scalar('params-norm', params_norm, iteration)
             writer.add_scalar('params-norm vs samples', params_norm,
                               args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'params-norm': params_norm}, iteration)
         if args.log_memory_to_tensorboard:
             mem_stats = torch.cuda.memory_stats()
             writer.add_scalar(
@@ -862,18 +843,12 @@ def training_log(
         # log skip batch
         wandb_stats["others/skipped_iterations"] = skipped_iteration
 
-        if wandb_writer and is_last_rank():
-            wandb.log(wandb_stats, step=iteration)
-
         throughput = num_floating_point_operations(args, batch_size) / (
             elapsed_time_per_iteration * 10**12 * args.world_size)
         if args.log_timers_to_tensorboard:
             if writer:
                 writer.add_scalar('iteration-time',
                                   elapsed_time_per_iteration, iteration)
-            if wandb_writer:
-                wandb_writer.log({'iteration-time': elapsed_time_per_iteration},
-                                 iteration)
         log_string = ' iteration {:8d}/{:8d} |'.format(
             iteration, args.train_iters)
         log_string += ' consumed samples: {:12d} |'.format(
@@ -885,8 +860,6 @@ def training_log(
             if args.log_timers_to_tensorboard:
                 if writer:
                     writer.add_scalar('throughput', throughput, iteration)
-                if wandb_writer:
-                    wandb_writer.log({'throughput': throughput}, iteration)
         log_string += ' learning rate: {:.3E} |'.format(learning_rate)
         log_string += ' global batch size: {:5d} |'.format(batch_size)
         for key in total_loss_dict:

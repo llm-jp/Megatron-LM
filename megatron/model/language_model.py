@@ -473,7 +473,7 @@ class TransformerLanguageModel(MegatronModule):
                                            tokentype_ids=tokentype_ids)
             if self.use_embedding_scaling:
                 # Scale the embedding by the dimension size.
-                encoder_input = encoder_input * self.hidden_size ** -0.5
+                encoder_input = encoder_input * (self.hidden_size ** 0.5)
         else:
             encoder_input = None
 

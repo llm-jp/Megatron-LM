@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=llama-2-13b
-#SBATCH --time=5:00:00
+#SBATCH --time=12:00:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
 #SBATCH --nodes 4
@@ -108,7 +108,7 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-13b-hf/tokenizer.model
-CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/Llama-2-13b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
+CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/Llama-2-13b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-mcore
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -167,13 +167,13 @@ mpirun -np $NUM_GPUS \
   --adam-beta1 0.9 \
   --adam-beta2 0.95 \
   --log-interval 1 \
-  --save-interval 500 \
+  --save-interval 50 \
   --eval-interval 100 \
   --eval-iters 10 \
   --bf16 \
   --untie-embeddings-and-output-weights \
   --use-rotary-position-embeddings \
-  --use-embedding-scaling \
+  --use-mcore-models \
   --normalization RMSNorm \
   --norm-epsilon 1e-5 \
   --no-position-embedding \

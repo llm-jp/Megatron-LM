@@ -53,6 +53,7 @@ class GPTModel(LanguageModule):
         rotary_percent: float = 1.0,
         rotary_base: int = 10000,
         seq_len_interpolation_factor: Optional[float] = None,
+        use_embedding_scaling=False,
     ) -> None:
         super().__init__(config=config)
 
@@ -65,6 +66,7 @@ class GPTModel(LanguageModule):
         self.parallel_output = parallel_output
         self.share_embeddings_and_output_weights = share_embeddings_and_output_weights
         self.position_embedding_type = position_embedding_type
+        self.use_embedding_scaling = use_embedding_scaling
 
         # megatron core pipelining currently depends on model type
         # TODO: remove this dependency ?
@@ -153,6 +155,9 @@ class GPTModel(LanguageModule):
             pass
         elif self.pre_process:
             decoder_input = self.embedding(input_ids=input_ids, position_ids=position_ids)
+            if self.use_embedding_scaling:
+                decoder_input = decoder_input * (self.config.hidden_size ** 0.5)
+
         else:
             # intermediate stage of pipeline
             # decoder will get hidden_states from encoder.input_tensor

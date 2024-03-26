@@ -842,6 +842,8 @@ def training_log(
 
         # log skip batch
         wandb_stats["others/skipped_iterations"] = skipped_iteration
+        if wandb_writer and is_last_rank():
+            wandb.log(wandb_stats, step=iteration)
 
         throughput = num_floating_point_operations(args, batch_size) / (
             elapsed_time_per_iteration * 10**12 * args.world_size)

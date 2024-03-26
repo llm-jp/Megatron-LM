@@ -167,7 +167,7 @@ mpirun -np $NUM_GPUS \
   --adam-beta1 0.9 \
   --adam-beta2 0.95 \
   --log-interval 1 \
-  --save-interval 50 \
+  --save-interval 500 \
   --eval-interval 100 \
   --eval-iters 10 \
   --bf16 \
@@ -188,6 +188,7 @@ mpirun -np $NUM_GPUS \
   --transformer-impl "transformer_engine" \
   --use-mpi \
   --use-z-loss \
+  --use-embedding-scaling \
   --wandb-name ${JOB_NAME} \
-  --wandb-project "geniac-megatron-lm-3d" \
-  --wandb-entity "okoge"
+  --wandb-project "megatron-lm-3d" \
+  --wandb-entity "turing-geniac"

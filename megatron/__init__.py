@@ -13,6 +13,10 @@ from .global_vars import get_wandb_writer
 from .global_vars import get_one_logger
 from .global_vars import get_adlr_autoresume
 from .global_vars import get_timers
+from .global_vars import update_global_dynamic_checkpoint
+from .global_vars import get_global_dynamic_checkpoint
+from .global_vars import set_maintenance_detected_time
+from .global_vars import get_maintenance_detected_time
 from .initialize  import initialize_megatron
 
 from .utils import (print_rank_0,

@@ -1122,6 +1122,8 @@ def _add_checkpointing_args(parser):
                        help="If '--load' is set, but checkpoint is not found "
                        "(e.g., path typo), then exit instead of random "
                        "initialization.")
+    group.add_argument('--use-gcp-dynamic-checkpointing', action='store_true')
+    group.add_argument('--dynamic-checkpointing-min', type=int, default=0)
 
     return parser
 

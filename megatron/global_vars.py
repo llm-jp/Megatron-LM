@@ -22,6 +22,8 @@ _GLOBAL_ONE_LOGGER = None
 _GLOBAL_ADLR_AUTORESUME = None
 _GLOBAL_TIMERS = None
 _GLOBAL_SIGNAL_HANDLER = None
+_GLOBAL_DYNAMIC_CHECKPOINT = None
+_GLOBAL_MAINTENANCE_DETECTED_TIME = None
 
 
 def get_args():
@@ -111,6 +113,7 @@ def set_global_variables(args, build_tokenizer=True):
     _set_one_logger(args)
     _set_adlr_autoresume(args)
     _set_timers(args)
+    _set_global_dynamic_checkpoint()
 
     if args.exit_signal_handler:
         _set_signal_handler()
@@ -253,6 +256,34 @@ def _set_timers(args):
     global _GLOBAL_TIMERS
     _ensure_var_is_not_initialized(_GLOBAL_TIMERS, 'timers')
     _GLOBAL_TIMERS = Timers(args.timing_log_level, args.timing_log_option)
+
+
+def _set_global_dynamic_checkpoint() -> None:
+    global _GLOBAL_DYNAMIC_CHECKPOINT
+    _ensure_var_is_not_initialized(_GLOBAL_DYNAMIC_CHECKPOINT, 'dynamic checkpoint')
+    _GLOBAL_DYNAMIC_CHECKPOINT = False
+
+
+def update_global_dynamic_checkpoint() -> None:
+    global _GLOBAL_DYNAMIC_CHECKPOINT
+    _ensure_var_is_initialized(_GLOBAL_DYNAMIC_CHECKPOINT, 'dynamic checkpoint')
+    _GLOBAL_DYNAMIC_CHECKPOINT = True
+
+
+def get_global_dynamic_checkpoint() -> bool:
+    _ensure_var_is_initialized(_GLOBAL_DYNAMIC_CHECKPOINT, 'dynamic checkpoint')
+    return _GLOBAL_DYNAMIC_CHECKPOINT  # type: ignore
+
+
+def set_maintenance_detected_time(time: float | None) -> None:
+    global _GLOBAL_MAINTENANCE_DETECTED_TIME
+    _ensure_var_is_not_initialized(_GLOBAL_MAINTENANCE_DETECTED_TIME, 'maintenance detected time')
+    _GLOBAL_MAINTENANCE_DETECTED_TIME = time
+
+
+def get_maintenance_detected_time() -> float | None:
+    _ensure_var_is_initialized(_GLOBAL_MAINTENANCE_DETECTED_TIME, 'maintenance detected time')
+    return _GLOBAL_MAINTENANCE_DETECTED_TIME  # type: ignore
 
 
 def _ensure_var_is_initialized(var, name):

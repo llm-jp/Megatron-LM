@@ -44,4 +44,5 @@ python tools/checkpoint/util.py \
   --save-dir ${HF_CHECKPOINT_DIR} \
   --true-vocab-size 32000 \
   --hf-tokenizer-path ${TOKENIZER_MODEL_DIR} \
-  --save-dtype bfloat16
+  --save-dtype bfloat16 \
+  --megatron-path /home/ext_kazuki_fujii_turing_motors_c/Megatron-LM

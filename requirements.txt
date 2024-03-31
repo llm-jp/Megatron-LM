@@ -29,6 +29,7 @@ wheel
 # checkpoint convert
 transformers
 accelerate
+safetensors
 
 # transformer
 einops

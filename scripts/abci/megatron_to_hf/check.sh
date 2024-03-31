@@ -1,21 +1,27 @@
 #!/bin/bash
-#$ -l rt_AF=1
-#$ -l h_rt=5:00:00
-#$ -j y
-#$ -o outputs/check/
-#$ -cwd
+#SBATCH --job-name=ckpt-convert-check
+#SBATCH --time=5:00:00
+#SBATCH --partition=a3
+#SBATCH --exclusive
+#SBATCH --nodes 1
+#SBATCH --gpus-per-node=8
+#SBATCH --ntasks-per-node=8
+#SBATCH --output=outputs/check/%x-%j.out
+#SBATCH --error=outputs/check/%x-%j.out
+
+set -e
 
 # module load
-source /etc/profile.d/modules.sh
-module load cuda/11.8/11.8.0
-module load cudnn/8.9/8.9.2
-module load nccl/2.16/2.16.2-1
-module load hpcx/2.12
+module load cuda/12.1
+module load cudnn/8.9.7
+module load hpcx/2.17.1
+
+# open file limit
+ulimit -n 65536 1048576
 
 # python virtualenv
-cd /bb/llm/gaf51275/llama/Megatron-LM
 source .env/bin/activate
 
 python scripts/abci/megatron_to_hf/check.py \
-  --base-hf-model-path /bb/llm/gaf51275/llama/from_megatron_hf_checkpoints/hf_checkpoints/Llama2-13b-base-extended-llm-jp/iter_0010000 \
-  --converted-hf-model-path /bb/llm/gaf51275/llama/from_megatron_hf_checkpoints/hf_checkpoints/Llama2-13b-base-extended-llm-jp/iter_0015000
+  --base-hf-model-path /home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-7b-hf \
+  --converted-hf-model-path /home/ext_kazuki_fujii_turing_motors_c/checkpoints/megatron-to-hf/Llama-2-7b-hf

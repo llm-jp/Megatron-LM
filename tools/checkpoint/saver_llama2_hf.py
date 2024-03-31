@@ -1,6 +1,7 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
-import torch, torch.multiprocessing as mp
+import torch
+import torch.multiprocessing as mp
 from transformers import AutoModelForCausalLM, LlamaConfig, AutoTokenizer
 from contextlib import contextmanager
 
@@ -9,6 +10,7 @@ def add_arguments(parser):
     group = parser.add_argument_group(title='Llama2_hf saver.')
     group.add_argument('--hf-tokenizer-path', type=str, default=None,
                        help='Huggingface tokenizer path. eg. /models/llama-2-hf/7b-chat.')
+    group.add_argument('--save-dtype', type=str, default='bfloat16')
 
 
 @contextmanager
@@ -17,13 +19,14 @@ def suspend_nn_inits():
     create context manager for loading without init
     see https://github.com/huggingface/transformers/issues/26258
     """
-    skip = lambda *args, **kwargs: None
-    saved_inits = torch.nn.init.kaiming_uniform_, torch.nn.init.uniform_, torch.nn.init.normal_  #saving
-    torch.nn.init.kaiming_uniform_ = torch.nn.init.uniform_ = torch.nn.init.normal_ = skip  #replacing
+    skip = lambda *args, **kwargs: None  # noqa: E731
+    saved_inits = torch.nn.init.kaiming_uniform_, torch.nn.init.uniform_, torch.nn.init.normal_   # saving
+    torch.nn.init.kaiming_uniform_ = torch.nn.init.uniform_ = torch.nn.init.normal_ = skip   # replacing
     try:
         yield
     finally:
         torch.nn.init.kaiming_uniform_, torch.nn.init.uniform_, torch.nn.init.normal_ = saved_inits  # restoring
+
 
 def save_checkpoint(queue: mp.Queue, args):
     def queue_get(name=None):
@@ -47,9 +50,8 @@ def save_checkpoint(queue: mp.Queue, args):
             print(f"Unexpected values in {msg_name}:")
             for key in msg.keys():
                 print(f"   {key}")
-            print(f"Exiting. If you want to ignore this, use the argument --no-checking.")
+            print("Exiting. If you want to ignore this, use the argument --no-checking.")
             exit(1)
-
 
     md = queue_get()
 
@@ -57,26 +59,33 @@ def save_checkpoint(queue: mp.Queue, args):
     assert hasattr(md, 'checkpoint_args')
     assert md.model_type == 'GPT'
     mag_conf = md.checkpoint_args
-    torch_dtype = torch.float16
+
+    if args.save_dtype == 'bfloat16':
+        torch_dtype = torch.bfloat16
+    elif args.save_dtype == 'float32':
+        torch_dtype = torch.float32
+    else:
+        torch_dtype = torch.float16
 
     llama_conf = LlamaConfig(
-        vocab_size              = mag_conf.padded_vocab_size,
-        hidden_size             = mag_conf.hidden_size,
-        intermediate_size       = mag_conf.ffn_hidden_size,
-        num_hidden_layers       = mag_conf.encoder_num_layers,
-        num_attention_heads     = mag_conf.num_attention_heads,
-        num_key_value_heads     = mag_conf.num_query_groups,
-        max_position_embeddings = mag_conf.max_position_embeddings,
-        rms_norm_eps            = mag_conf.norm_epsilon,
-        tie_word_embeddings     = not mag_conf.untie_embeddings_and_output_weights,
-        attention_bias          = mag_conf.add_bias_linear,
-        torch_dtype             = torch_dtype
+        vocab_size=mag_conf.padded_vocab_size,
+        hidden_size=mag_conf.hidden_size,
+        intermediate_size=mag_conf.ffn_hidden_size,
+        num_hidden_layers=mag_conf.encoder_num_layers,
+        num_attention_heads=mag_conf.num_attention_heads,
+        num_key_value_heads=mag_conf.num_query_groups,
+        max_position_embeddings=mag_conf.max_position_embeddings,
+        rms_norm_eps=mag_conf.norm_epsilon,
+        tie_word_embeddings=not mag_conf.untie_embeddings_and_output_weights,
+        attention_bias=mag_conf.add_bias_linear,
+        torch_dtype=torch_dtype
     )
 
     state_dict = {}
+
     def set_hf_param(name, tensor: torch.Tensor):
         weight_name = f'{name}.weight'
-        state_dict[weight_name] = tensor.to(torch.float16)
+        state_dict[weight_name] = tensor.to(torch.bfloat16)
 
     set_hf_param('model.embed_tokens', queue_get("embeddings")["word embeddings"])
     for i_layer in range(llama_conf.num_hidden_layers):
@@ -103,8 +112,15 @@ def save_checkpoint(queue: mp.Queue, args):
 
     with suspend_nn_inits():
         print("Saving model to disk ...")
-        model = AutoModelForCausalLM.from_pretrained(None, config=llama_conf, state_dict=state_dict, torch_dtype=torch_dtype)
+        model = AutoModelForCausalLM.from_pretrained(
+            None,  # type: ignore
+            config=llama_conf,
+            state_dict=state_dict,
+            torch_dtype=torch_dtype
+        )
         model.save_pretrained(args.save_dir)
 
-    tokenizer = AutoTokenizer.from_pretrained(args.hf_tokenizer_path)
-    tokenizer.save_pretrained(args.save_dir)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.hf_tokenizer_path
+    )
+    tokenizer.save_pretrained(args.save_dir, safe_serialization=True)

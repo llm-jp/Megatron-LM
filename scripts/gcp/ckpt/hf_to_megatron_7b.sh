@@ -43,4 +43,5 @@ python tools/checkpoint/util.py \
   --target-tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
   --target-pipeline-parallel-size ${PIPELINE_PARALLEL_SIZE} \
   --load-dir ${HF_CHECKPOINT_DIR} \
-  --save-dir ${MEGATRON_CHECKPOINT_DIR}
+  --save-dir ${MEGATRON_CHECKPOINT_DIR} \
+  --tokenizer-model ${TOKENIZER_MODEL}

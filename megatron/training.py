@@ -1083,17 +1083,18 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             torch.autograd.profiler.emit_nvtx(record_shapes=True).__enter__()
 
         # Dynamic checkpointing
-        maintenance_detected = check_maintenance_event()
-        maintenance_tensor = torch.tensor(maintenance_detected, dtype=torch.int).cuda(torch.cuda.current_device())
-        torch_distributed.all_reduce(maintenance_tensor, op=torch_distributed.ReduceOp.MAX)
-        maintenance_detected_time = get_maintenance_detected_time()
+        if args.use_gcp_dynamic_checkpointing:
+            maintenance_detected = check_maintenance_event()
+            maintenance_tensor = torch.tensor(maintenance_detected, dtype=torch.int).cuda(torch.cuda.current_device())
+            torch_distributed.all_reduce(maintenance_tensor, op=torch_distributed.ReduceOp.MAX)
+            maintenance_detected_time = get_maintenance_detected_time()
 
-        if is_last_rank() and maintenance_tensor.item() > 0 and maintenance_detected_time is None:
-            set_maintenance_detected_time(time=time.time())
-        if is_last_rank() and maintenance_tensor.item() > 0 and maintenance_detected_time is not None:
-            if (time.time() - maintenance_detected_time) > args.dynamic_checkpointing_min * 60:
-                set_maintenance_detected_time(time=None)
-                update_global_dynamic_checkpoint()
+            if is_last_rank() and maintenance_tensor.item() > 0 and maintenance_detected_time is None:
+                set_maintenance_detected_time(time=time.time())
+            if is_last_rank() and maintenance_tensor.item() > 0 and maintenance_detected_time is not None:
+                if (time.time() - maintenance_detected_time) > args.dynamic_checkpointing_min * 60:
+                    set_maintenance_detected_time(time=None)
+                    update_global_dynamic_checkpoint()
 
         # Update number of microbatches first without consistency check to decide if a
         # checkpoint should be saved. If the number of microbatches is different

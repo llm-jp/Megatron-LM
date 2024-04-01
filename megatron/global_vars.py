@@ -282,7 +282,6 @@ def set_maintenance_detected_time(time: float | None) -> None:
 
 
 def get_maintenance_detected_time() -> float | None:
-    _ensure_var_is_initialized(_GLOBAL_MAINTENANCE_DETECTED_TIME, 'maintenance detected time')
     return _GLOBAL_MAINTENANCE_DETECTED_TIME  # type: ignore
 
 
@@ -294,6 +293,3 @@ def _ensure_var_is_initialized(var, name):
 def _ensure_var_is_not_initialized(var, name):
     """Make sure the input variable is not None."""
     assert var is None, '{} is already initialized.'.format(name)
-
-
-

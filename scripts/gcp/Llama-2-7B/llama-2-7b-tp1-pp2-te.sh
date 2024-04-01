@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=llama-2-7b
-#SBATCH --time=1:00:00
+#SBATCH --time=2:00:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
-#SBATCH --nodes 4
+#SBATCH --nodes 1
 #SBATCH --gpus-per-node=8
 #SBATCH --ntasks-per-node=8
 #SBATCH --output=outputs/llama-2-7b/%x-%j.out
@@ -90,7 +90,7 @@ NUM_HEADS=32
 SEQ_LENGTH=4096
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=1   # fixed
+TENSOR_PARALLEL_SIZE=2   # fixed
 PIPELINE_PARALLEL_SIZE=2 # num layers 32: Llama-2 7B
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
@@ -108,7 +108,8 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-7b-hf/tokenizer.model
-CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-debug
+CHECKPOINT_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/hf-to-megatron/Llama-2-7b/tp2-pp2
+CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -125,7 +126,14 @@ JOB_NAME="llama-2-7b-base-okazaki-lab-cc-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPU
 
 # --norm-epsilon 1e-5 : conifg.json (RMS norm)
 
-CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"
+# checkpoint load
+if [[ -f "${CHECKPOINT_SAVE_DIR}/latest_checkpointed_iteration.txt" ]]; then
+  # resume training
+  CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"
+else
+  # first training
+  CHECKPOINT_ARGS="--load ${CHECKPOINT_DIR} --no-load-rng --no-load-optim"
+fi
 
 # run
 mpirun -np $NUM_GPUS \
@@ -173,6 +181,7 @@ mpirun -np $NUM_GPUS \
   --bf16 \
   --untie-embeddings-and-output-weights \
   --use-rotary-position-embeddings \
+  --use-mcore-models \
   --normalization RMSNorm \
   --norm-epsilon 1e-5 \
   --no-position-embedding \
@@ -180,12 +189,17 @@ mpirun -np $NUM_GPUS \
   --attention-dropout 0.0 \
   --hidden-dropout 0.0 \
   --swiglu \
+  --disable-bias-linear \
   --use-flash-attn \
   --recompute-activations \
   --recompute-granularity "selective" \
   --attention-softmax-in-fp32 \
   --transformer-impl "transformer_engine" \
   --use-mpi \
+  --use-z-loss \
+  --use-embedding-scaling \
+  --use-gcp-dynamic-checkpointing \
+  --dynamic-checkpointing-min 30 \
   --wandb-name ${JOB_NAME} \
-  --wandb-project "geniac-megatron-lm-3d" \
-  --wandb-entity "okoge"
+  --wandb-project "megatron-lm-3d" \
+  --wandb-entity "turing-geniac"

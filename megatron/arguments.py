@@ -722,7 +722,7 @@ def _add_logging_args(parser):
                        '   1: report timing for operations that are executed '
                        '      very limited times (basically once) during '
                        '      each iteration (such as gradient all-reduce) '
-                       '   2: report timing for operations that migh be '
+                       '   2: report timing for operations that might be '
                        '      executed numerous times during each iteration. '
                        'Note that setting the level to 1 or 2 might '
                        'cause increase in iteration time.')

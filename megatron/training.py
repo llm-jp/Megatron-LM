@@ -709,7 +709,7 @@ def training_log(
     if args.log_timers_to_tensorboard and \
        (iteration % args.tensorboard_log_interval == 0):
         timers.write(timers_to_log, writer, iteration,
-                     normalizer=total_iterations)
+                     normalizer=total_iterations, barrier=False, wandb_writer=wandb_writer)
     if writer and (iteration % args.tensorboard_log_interval == 0):
         if args.log_learning_rate_to_tensorboard:
             writer.add_scalar('learning-rate', learning_rate, iteration)

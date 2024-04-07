@@ -3,7 +3,7 @@
 #SBATCH --time=2:00:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
-#SBATCH --nodes 1
+#SBATCH --nodes 4
 #SBATCH --gpus-per-node=8
 #SBATCH --ntasks-per-node=8
 #SBATCH --output=outputs/llama-2-7b/%x-%j.out
@@ -90,7 +90,7 @@ NUM_HEADS=32
 SEQ_LENGTH=4096
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=2   # fixed
+TENSOR_PARALLEL_SIZE=1  # fixed
 PIPELINE_PARALLEL_SIZE=2 # num layers 32: Llama-2 7B
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
@@ -108,8 +108,8 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-7b-hf/tokenizer.model
-CHECKPOINT_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/hf-to-megatron/Llama-2-7b/tp2-pp2
-CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct
+CHECKPOINT_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/hf-to-megatron/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
+CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-profile
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -135,8 +135,31 @@ else
   CHECKPOINT_ARGS="--load ${CHECKPOINT_DIR} --no-load-rng --no-load-optim"
 fi
 
+# nsys
+PROFILE=true
+PROFILE_ARGS=""
+if [[ ${PROFILE} = "true" ]]; then
+  # module load nsys
+  PROFILE_ARGS="--profile"
+fi
+PROFILING_DIR=/home/ext_kazuki_fujii_turing_motors_c/nsys/${SLURM_JOB_ID}
+
+# timers
+LOG_TIMERS=true
+LOG_ARGS=""
+
+if [[ ${LOG_TIMERS} = "true" ]]; then
+  LOG_ARGS="--log-timers-to-tensorboard --timing-log-level 2"
+fi
+
 # run
-mpirun -np $NUM_GPUS \
+# nsys profile -s none -t nvtx,cuda \
+#   -o ${PROFILING_DIR} \
+#   --force-overwrite true \
+#   --capture-range=cudaProfilerApi \
+#   --capture-range-end=stop \
+#   --stats=true \
+  mpirun -np $NUM_GPUS \
   --npernode $NUM_GPU_PER_NODE \
   -x MASTER_ADDR=$MASTER_ADDR \
   -x MASTER_PORT=$MASTER_PORT \
@@ -200,6 +223,8 @@ mpirun -np $NUM_GPUS \
   --use-embedding-scaling \
   --use-gcp-dynamic-checkpointing \
   --dynamic-checkpointing-min 30 \
+  ${LOG_ARGS} \
+  ${PROFILE_ARGS} \
   --wandb-name ${JOB_NAME} \
   --wandb-project "megatron-lm-3d" \
   --wandb-entity "turing-geniac"

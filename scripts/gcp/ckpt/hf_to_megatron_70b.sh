@@ -23,8 +23,8 @@ ulimit -n 65536 1048576
 source .env/bin/activate
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=2
-PIPELINE_PARALLEL_SIZE=2
+TENSOR_PARALLEL_SIZE=4
+PIPELINE_PARALLEL_SIZE=8
 
 # model config
 HF_CHECKPOINT_DIR=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-70b-hf

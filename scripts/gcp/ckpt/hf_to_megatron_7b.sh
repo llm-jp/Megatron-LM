@@ -23,7 +23,7 @@ ulimit -n 65536 1048576
 source .env/bin/activate
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=2
+TENSOR_PARALLEL_SIZE=1
 PIPELINE_PARALLEL_SIZE=2
 
 # model config

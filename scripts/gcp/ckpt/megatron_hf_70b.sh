@@ -23,8 +23,8 @@ ulimit -n 65536 1048576
 source .env/bin/activate
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=2
-PIPELINE_PARALLEL_SIZE=2
+TENSOR_PARALLEL_SIZE=4
+PIPELINE_PARALLEL_SIZE=8
 
 # model config
 MEGATRON_CHECKPOINT_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/hf-to-megatron/Llama-2-70b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}

@@ -136,7 +136,7 @@ else
 fi
 
 # nsys
-PROFILE=true
+PROFILE=false
 PROFILE_ARGS=""
 if [[ ${PROFILE} = "true" ]]; then
   # module load nsys
@@ -159,7 +159,8 @@ fi
 #   --capture-range=cudaProfilerApi \
 #   --capture-range-end=stop \
 #   --stats=true \
-  mpirun -np $NUM_GPUS \
+
+mpirun -np $NUM_GPUS \
   --npernode $NUM_GPU_PER_NODE \
   -x MASTER_ADDR=$MASTER_ADDR \
   -x MASTER_PORT=$MASTER_PORT \
@@ -198,7 +199,7 @@ fi
   --adam-beta1 0.9 \
   --adam-beta2 0.95 \
   --log-interval 1 \
-  --save-interval 100 \
+  --save-interval 500 \
   --eval-interval 100 \
   --eval-iters 10 \
   --bf16 \
@@ -222,7 +223,7 @@ fi
   --use-z-loss \
   --use-embedding-scaling \
   --use-gcp-dynamic-checkpointing \
-  --dynamic-checkpointing-min 30 \
+  --dynamic-checkpointing-min 0 \
   ${LOG_ARGS} \
   ${PROFILE_ARGS} \
   --wandb-name ${JOB_NAME} \

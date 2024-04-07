@@ -59,7 +59,7 @@ from megatron.model.vision.knn_monitor import compute_feature_bank
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
-    torch.distributed.barrier()
+    torch_distributed.barrier()
     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print_rank_0('[' + string + '] datetime: {} '.format(time_str))
 
@@ -78,6 +78,7 @@ def check_maintenance_event() -> bool:
         if response.status_code == 200:
             event = response.text
             if "TERMINATE_ON_HOST_MAINTENANCE" in event:
+                print("INFO: Host maintenance detected.")
                 return True
             else:
                 return False
@@ -1089,12 +1090,28 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             torch_distributed.all_reduce(maintenance_tensor, op=torch_distributed.ReduceOp.MAX)
             maintenance_detected_time = get_maintenance_detected_time()
 
-            if is_last_rank() and maintenance_tensor.item() > 0 and maintenance_detected_time is None:
-                set_maintenance_detected_time(time=time.time())
-            if is_last_rank() and maintenance_tensor.item() > 0 and maintenance_detected_time is not None:
-                if (time.time() - maintenance_detected_time) > args.dynamic_checkpointing_min * 60:
-                    set_maintenance_detected_time(time=None)
-                    update_global_dynamic_checkpoint()
+            if maintenance_tensor.item() > 0:
+                if maintenance_detected_time is None:
+                    # all rank is updated at the same time
+                    set_maintenance_detected_time(time=time.time())
+                    # print(f"DEBUG: Maintenance detected at iteration {iteration}, rank={torch_distributed.get_rank()}")
+                else:
+                    if (time.time() - maintenance_detected_time) > args.dynamic_checkpointing_min * 60:
+                        set_maintenance_detected_time(time=None)
+                        update_global_dynamic_checkpoint()
+                        # print(f"DEBUG: Dynamic checkpointing triggered at iteration {iteration}, rank={torch_distributed.get_rank()}")
+                    else:
+                        dynamic_checkpoint_flag = get_global_dynamic_checkpoint()
+                        torch_distributed.all_reduce(
+                            torch.tensor(
+                                dynamic_checkpoint_flag, dtype=torch.int
+                            ).cuda(torch.cuda.current_device()),
+                            op=torch_distributed.ReduceOp.MAX
+                        )
+                        if dynamic_checkpoint_flag:
+                            # print(f"DEBUG: Dynamic checkpointing triggered at iteration {iteration}, rank={torch_distributed.get_rank()}")
+                            update_global_dynamic_checkpoint()
+                            set_maintenance_detected_time(time=None)
 
         # Update number of microbatches first without consistency check to decide if a
         # checkpoint should be saved. If the number of microbatches is different

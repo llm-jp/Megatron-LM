@@ -1,5 +1,6 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
-
+import sys
+import os
 import torch
 import torch.multiprocessing as mp
 from transformers import AutoModelForCausalLM, LlamaConfig, AutoTokenizer
@@ -29,6 +30,14 @@ def suspend_nn_inits():
 
 
 def save_checkpoint(queue: mp.Queue, args):
+    # Search in directory above this
+    sys.path.append(os.path.abspath(
+        os.path.join(os.path.dirname(__file__),
+                     os.path.pardir,
+                     os.path.pardir)))
+    if args.megatron_path is not None:
+        sys.path.insert(0, args.megatron_path)
+
     def queue_get(name=None):
         val = queue.get()
         if val == "exit":

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=llama-2-13b
-#SBATCH --time=12:00:00
+#SBATCH --time=1:00:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
 #SBATCH --nodes 4
@@ -90,13 +90,14 @@ NUM_HEADS=40
 SEQ_LENGTH=4096
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=2   # fixed
+TENSOR_PARALLEL_SIZE=1   # fixed
 PIPELINE_PARALLEL_SIZE=2 # num layers 40: Llama-2 13B
+CONTEXT_PARALLEL_SIZE=2
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
 # training config
 MICRO_BATCH_SIZE=2
-GLOBAL_BATCH_SIZE=1024
+GLOBAL_BATCH_SIZE=2048
 TRAIN_STEPS=25000 # e.g. llama: 1T tokens / 4M tokens_per_batch = 250000 steps
 # 今回は約100B Tokensなので 1/10
 
@@ -138,6 +139,7 @@ mpirun -np $NUM_GPUS \
   python pretrain_gpt.py \
   --tensor-model-parallel-size ${TENSOR_PARALLEL_SIZE} \
   --pipeline-model-parallel-size ${PIPELINE_PARALLEL_SIZE} \
+  --context-parallel-size ${CONTEXT_PARALLEL_SIZE} \
   --sequence-parallel \
   --use-distributed-optimizer \
   --num-layers ${NUM_LAYERS} \
@@ -173,6 +175,7 @@ mpirun -np $NUM_GPUS \
   --bf16 \
   --untie-embeddings-and-output-weights \
   --use-rotary-position-embeddings \
+  --disable-bias-linear \
   --use-mcore-models \
   --normalization RMSNorm \
   --norm-epsilon 1e-5 \

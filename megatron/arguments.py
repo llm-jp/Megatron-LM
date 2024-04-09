@@ -722,7 +722,7 @@ def _add_logging_args(parser):
                        '   1: report timing for operations that are executed '
                        '      very limited times (basically once) during '
                        '      each iteration (such as gradient all-reduce) '
-                       '   2: report timing for operations that migh be '
+                       '   2: report timing for operations that might be '
                        '      executed numerous times during each iteration. '
                        'Note that setting the level to 1 or 2 might '
                        'cause increase in iteration time.')
@@ -1122,6 +1122,8 @@ def _add_checkpointing_args(parser):
                        help="If '--load' is set, but checkpoint is not found "
                        "(e.g., path typo), then exit instead of random "
                        "initialization.")
+    group.add_argument('--use-gcp-dynamic-checkpointing', action='store_true')
+    group.add_argument('--dynamic-checkpointing-min', type=int, default=0)
 
     return parser
 

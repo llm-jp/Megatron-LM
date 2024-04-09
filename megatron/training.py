@@ -28,6 +28,8 @@ from megatron import get_wandb_writer
 from megatron import get_one_logger
 from megatron import get_current_global_batch_size
 from megatron import get_num_microbatches
+from megatron import update_global_dynamic_checkpoint, get_global_dynamic_checkpoint
+from megatron import set_maintenance_detected_time, get_maintenance_detected_time
 from megatron import is_last_rank
 from megatron import update_num_microbatches
 from megatron.core import mpu, tensor_parallel
@@ -57,7 +59,7 @@ from megatron.model.vision.knn_monitor import compute_feature_bank
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
-    torch.distributed.barrier()
+    torch_distributed.barrier()
     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print_rank_0('[' + string + '] datetime: {} '.format(time_str))
 
@@ -76,6 +78,7 @@ def check_maintenance_event() -> bool:
         if response.status_code == 200:
             event = response.text
             if "TERMINATE_ON_HOST_MAINTENANCE" in event:
+                print("INFO: Host maintenance detected.")
                 return True
             else:
                 return False
@@ -707,7 +710,7 @@ def training_log(
     if args.log_timers_to_tensorboard and \
        (iteration % args.tensorboard_log_interval == 0):
         timers.write(timers_to_log, writer, iteration,
-                     normalizer=total_iterations)
+                     normalizer=total_iterations, barrier=False, wandb_writer=wandb_writer)
     if writer and (iteration % args.tensorboard_log_interval == 0):
         if args.log_learning_rate_to_tensorboard:
             writer.add_scalar('learning-rate', learning_rate, iteration)
@@ -1080,6 +1083,36 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             torch.cuda.cudart().cudaProfilerStart()
             torch.autograd.profiler.emit_nvtx(record_shapes=True).__enter__()
 
+        # Dynamic checkpointing
+        if args.use_gcp_dynamic_checkpointing:
+            maintenance_detected = check_maintenance_event()
+            maintenance_tensor = torch.tensor(maintenance_detected, dtype=torch.int).cuda(torch.cuda.current_device())
+            torch_distributed.all_reduce(maintenance_tensor, op=torch_distributed.ReduceOp.MAX)
+            maintenance_detected_time = get_maintenance_detected_time()
+
+            if maintenance_tensor.item() > 0:
+                if maintenance_detected_time is None:
+                    # all rank is updated at the same time
+                    set_maintenance_detected_time(time=time.time())
+                    # print(f"DEBUG: Maintenance detected at iteration {iteration}, rank={torch_distributed.get_rank()}")
+                else:
+                    if (time.time() - maintenance_detected_time) > args.dynamic_checkpointing_min * 60:
+                        set_maintenance_detected_time(time=None)
+                        update_global_dynamic_checkpoint()
+                        # print(f"DEBUG: Dynamic checkpointing triggered at iteration {iteration}, rank={torch_distributed.get_rank()}")
+                    else:
+                        dynamic_checkpoint_flag = get_global_dynamic_checkpoint()
+                        torch_distributed.all_reduce(
+                            torch.tensor(
+                                dynamic_checkpoint_flag, dtype=torch.int
+                            ).cuda(torch.cuda.current_device()),
+                            op=torch_distributed.ReduceOp.MAX
+                        )
+                        if dynamic_checkpoint_flag:
+                            # print(f"DEBUG: Dynamic checkpointing triggered at iteration {iteration}, rank={torch_distributed.get_rank()}")
+                            update_global_dynamic_checkpoint()
+                            set_maintenance_detected_time(time=None)
+
         # Update number of microbatches first without consistency check to decide if a
         # checkpoint should be saved. If the number of microbatches is different
         # from the previous iteration, save a checkpoint. Then run consistency check
@@ -1169,12 +1202,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 exit = True
                 break
 
-        maintenance_detected = check_maintenance_event()
-        maintenance_tensor = torch.tensor(maintenance_detected, dtype=torch.int).cuda(torch.cuda.current_device())
-        torch_distributed.all_reduce(maintenance_tensor, op=torch_distributed.ReduceOp.MAX)
+        dynamic_checkpoint_flag = get_global_dynamic_checkpoint()
 
         if args.save and args.save_interval and (
-            iteration % args.save_interval == 0 or maintenance_tensor.item() > 0
+            iteration % args.save_interval == 0 or dynamic_checkpoint_flag
         ):
             timers('interval-time').stop()
             save_checkpoint_and_time(iteration, model, optimizer,

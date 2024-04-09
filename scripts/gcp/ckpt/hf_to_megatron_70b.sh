@@ -23,8 +23,8 @@ ulimit -n 65536 1048576
 source .env/bin/activate
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=2
-PIPELINE_PARALLEL_SIZE=2
+TENSOR_PARALLEL_SIZE=4
+PIPELINE_PARALLEL_SIZE=8
 
 # model config
 HF_CHECKPOINT_DIR=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-70b-hf
@@ -43,4 +43,5 @@ python tools/checkpoint/util.py \
   --target-tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
   --target-pipeline-parallel-size ${PIPELINE_PARALLEL_SIZE} \
   --load-dir ${HF_CHECKPOINT_DIR} \
-  --save-dir ${MEGATRON_CHECKPOINT_DIR}
+  --save-dir ${MEGATRON_CHECKPOINT_DIR} \
+  --tokenizer-model ${TOKENIZER_MODEL}

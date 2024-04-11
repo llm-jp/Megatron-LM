@@ -1,0 +1,5 @@
+/data/llm-jp-corpus/v3.0.0/training_resharded/validation//ja/wiki_0000.jsonl,/data/llm-jp-corpus/v3.0.0/training_resharded_tokenize_ver3.0/validation/ja/wiki_0000.jsonl_text_document,886814
+/data/llm-jp-corpus/v3.0.0/training_resharded/validation//en/wiki_0000.jsonl,/data/llm-jp-corpus/v3.0.0/training_resharded_tokenize_ver3.0/validation/en/wiki_0000.jsonl_text_document,946215
+/data/llm-jp-corpus/v3.0.0/training_resharded/validation//ko/wiki_0000.jsonl,/data/llm-jp-corpus/v3.0.0/training_resharded_tokenize_ver3.0/validation/ko/wiki_0000.jsonl_text_document,520390
+/data/llm-jp-corpus/v3.0.0/training_resharded/validation//zh/wiki_0000.jsonl,/data/llm-jp-corpus/v3.0.0/training_resharded_tokenize_ver3.0/validation/zh/wiki_0000.jsonl_text_document,614568
+/data/llm-jp-corpus/v3.0.0/training_resharded/validation//code/stack_0000.jsonl,/data/llm-jp-corpus/v3.0.0/training_resharded_tokenize_ver3.0/validation/code/stack_0000.jsonl_text_document,73520492

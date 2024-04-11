@@ -152,7 +152,7 @@ class Timers:
         """Initialize group of timers.
 
         Args:
-            log_level (int): Log level to control what timers are enabled.            
+            log_level (int): Log level to control what timers are enabled.
             log_option (str): Setting for logging statistics over ranks for all the timers. Allowed: ['max', 'minmax', 'all'].
         """
         self._log_level = log_level
@@ -323,7 +323,7 @@ class Timers:
             str: Formatted string with the timer values.
         """
 
-        if names == None:  # get all registered timers
+        if names is None:  # get all registered timers
             names = self._timers.keys()
 
         assert normalizer > 0.0
@@ -376,6 +376,7 @@ class Timers:
         normalizer: float = 1.0,
         reset: bool = True,
         barrier: bool = False,
+        wandb_writer=None,
     ):
         """Write timers to a tensorboard writer. Note that we only report maximum time across ranks to tensorboard.
 
@@ -385,14 +386,17 @@ class Timers:
             iteration (int): Current iteration.
             normalizer (float, optional): Normalizes the timer values by the factor. Defaults to 1.0.
             reset (bool, optional): Whether to reset timer values after logging. Defaults to True.
-            barrier (bool, optional): Whether to do a global barrier before time measurments. Defaults to False.
+            barrier (bool, optional): Whether to do a global barrier before time measurements. Defaults to False.
         """
         # currently when using add_scalars,
         # torch.utils.add_scalars makes each timer its own run, which
         # polutes the runs list, so we just add each as a scalar
         assert normalizer > 0.0
         name_to_min_max_time = self._get_global_min_max_time(names, reset, barrier, normalizer)
-        if writer is not None:
+
+        if wandb_writer is not None:
+            import wandb
+
             for name in name_to_min_max_time:
                 _, max_time = name_to_min_max_time[name]
-                writer.add_scalar(name + '-time', max_time, iteration)
+                wandb.log({'timers/' + name + '-time': max_time}, step=iteration)

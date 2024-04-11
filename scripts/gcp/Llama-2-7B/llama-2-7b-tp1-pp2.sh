@@ -171,6 +171,7 @@ mpirun -np $NUM_GPUS \
   --bf16 \
   --untie-embeddings-and-output-weights \
   --use-rotary-position-embeddings \
+  --disable-bias-linear \
   --normalization RMSNorm \
   --norm-epsilon 1e-5 \
   --no-position-embedding \

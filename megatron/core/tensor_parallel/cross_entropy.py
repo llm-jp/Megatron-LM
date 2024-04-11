@@ -73,16 +73,6 @@ class _VocabParallelCrossEntropy(torch.autograd.Function):
         # Loss = log(sum(exp(logits))) - predicted-logit.
         loss = torch.log(sum_exp_logits) - predicted_logits
 
-        # z-loss
-        use_z_loss: bool = False
-        if args is not None and args.use_z_loss and label_smoothing == 0.0:
-            use_z_loss = True
-
-            sum_exp_logits = torch.clamp(sum_exp_logits, min=1e-6)
-            log_Z = torch.log(sum_exp_logits)
-            z_loss = 1e-4 * log_Z.pow(2).mean()
-            loss: torch.Tensor = loss + z_loss
-
         # Normalize and optionally smooth logits
         exp_logits.div_(sum_exp_logits.unsqueeze(dim=-1))
 
@@ -104,6 +94,19 @@ class _VocabParallelCrossEntropy(torch.autograd.Function):
             log_probs = torch.log(exp_logits)
             mean_log_probs = log_probs.mean(dim=-1)
             loss = (1.0 - smoothing) * loss - smoothing * mean_log_probs
+
+        # z-loss
+        use_z_loss: bool = False
+        if args is not None and args.use_z_loss:
+            use_z_loss = True
+
+            # torch.log(sum(exp(logits))) = torch.log(sum(exp(logits - max(logits) + max(logits))))
+            # = torch.log[sum(exp(logits - max(logits))) * exp(max(logits))]
+            # = torch.log(sum(exp(logits - max(logits)))) + max(logits)
+            # = torch.log(sum_exp_logits) + max(logits)
+            log_Z = torch.log(sum_exp_logits) + logits_max
+            z_loss = 1e-4 * log_Z * log_Z
+            loss: torch.Tensor = loss + z_loss
 
         ctx.use_z_loss = use_z_loss
         ctx.label_smoothing, ctx.vocab_size = label_smoothing, vocab_size

@@ -22,6 +22,8 @@ _GLOBAL_ONE_LOGGER = None
 _GLOBAL_ADLR_AUTORESUME = None
 _GLOBAL_TIMERS = None
 _GLOBAL_SIGNAL_HANDLER = None
+_GLOBAL_DYNAMIC_CHECKPOINT = None
+_GLOBAL_MAINTENANCE_DETECTED_TIME = None
 
 
 def get_args():
@@ -111,6 +113,8 @@ def set_global_variables(args, build_tokenizer=True):
     _set_one_logger(args)
     _set_adlr_autoresume(args)
     _set_timers(args)
+    _set_global_dynamic_checkpoint()
+    initialize_maintenance_detected_time()
 
     if args.exit_signal_handler:
         _set_signal_handler()
@@ -159,7 +163,7 @@ def _set_tensorboard_writer(args):
     if hasattr(args, 'tensorboard_dir') and \
        args.tensorboard_dir and args.rank == (args.world_size - 1):
         try:
-            from torch.utils.tensorboard import SummaryWriter
+            from torch.utils.tensorboard.writer import SummaryWriter
             print('> setting tensorboard ...')
             _GLOBAL_TENSORBOARD_WRITER = SummaryWriter(
                 log_dir=args.tensorboard_dir,
@@ -255,14 +259,44 @@ def _set_timers(args):
     _GLOBAL_TIMERS = Timers(args.timing_log_level, args.timing_log_option)
 
 
+def _set_global_dynamic_checkpoint() -> None:
+    global _GLOBAL_DYNAMIC_CHECKPOINT
+    _ensure_var_is_not_initialized(_GLOBAL_DYNAMIC_CHECKPOINT, 'dynamic checkpoint')
+    _GLOBAL_DYNAMIC_CHECKPOINT = False
+
+
+def update_global_dynamic_checkpoint() -> None:
+    global _GLOBAL_DYNAMIC_CHECKPOINT
+    _GLOBAL_DYNAMIC_CHECKPOINT = True
+
+
+def get_global_dynamic_checkpoint() -> bool:
+    global _GLOBAL_DYNAMIC_CHECKPOINT
+    _ensure_var_is_initialized(_GLOBAL_DYNAMIC_CHECKPOINT, 'dynamic checkpoint')
+    return _GLOBAL_DYNAMIC_CHECKPOINT  # type: ignore
+
+
+def initialize_maintenance_detected_time() -> None:
+    global _GLOBAL_MAINTENANCE_DETECTED_TIME
+    _ensure_var_is_not_initialized(_GLOBAL_MAINTENANCE_DETECTED_TIME, 'maintenance detected time')
+    _GLOBAL_MAINTENANCE_DETECTED_TIME = None
+
+
+def set_maintenance_detected_time(time: float | None) -> None:
+    global _GLOBAL_MAINTENANCE_DETECTED_TIME
+    _GLOBAL_MAINTENANCE_DETECTED_TIME = time
+
+
+def get_maintenance_detected_time() -> float | None:
+    global _GLOBAL_MAINTENANCE_DETECTED_TIME
+    return _GLOBAL_MAINTENANCE_DETECTED_TIME  # type: ignore
+
+
 def _ensure_var_is_initialized(var, name):
     """Make sure the input variable is not None."""
-    assert var is not None, '{} is not initialized.'.format(name)
+    assert var is not None, f'{name} is not initialized.'
 
 
 def _ensure_var_is_not_initialized(var, name):
     """Make sure the input variable is not None."""
-    assert var is None, '{} is already initialized.'.format(name)
-
-
-
+    assert var is None, f'{name} is already initialized.'

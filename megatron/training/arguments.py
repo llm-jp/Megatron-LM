@@ -70,6 +70,9 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
         os.environ['LOCAL_RANK'] = str(local_rank)
         os.environ['WORLD_SIZE'] = str(world_size)
 
+    args.rank = int(os.getenv('RANK', '0'))
+    args.world_size = int(os.getenv("WORLD_SIZE", '1'))
+
     return args
 
 
@@ -755,6 +758,7 @@ def _add_network_size_args(parser):
     group.add_argument('--rotary-interleaved', action='store_true',
                           help='Use interleaved rotary embedding.')
     group.add_argument('--rope-theta', type=int, default=10000)
+    group.add_argument("--use-embedding-scaling", action="store_true")
     group.add_argument('--rotary-seq-len-interpolation-factor', type=int, default=None,
                        help='Sequence length interpolation factor for rotary embeddings.')
     group.add_argument('--no-position-embedding',

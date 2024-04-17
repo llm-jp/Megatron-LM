@@ -168,7 +168,7 @@ def _set_wandb_writer(args):
     _ensure_var_is_not_initialized(_GLOBAL_WANDB_WRITER,
                                    'wandb writer')
     if getattr(args, 'wandb_project', '') and args.rank == (args.world_size - 1):
-        if args.wandb_exp_name is None:
+        if args.wandb_name is None:
             raise ValueError("Please specify the wandb experiment name!")
 
         import wandb

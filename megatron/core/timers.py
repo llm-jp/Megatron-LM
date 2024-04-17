@@ -376,6 +376,7 @@ class Timers:
         normalizer: float = 1.0,
         reset: bool = True,
         barrier: bool = False,
+        wandb_writer=None,
     ):
         """Write timers to a tensorboard writer. Note that we only report maximum time across ranks to tensorboard.
 
@@ -392,7 +393,9 @@ class Timers:
         # polutes the runs list, so we just add each as a scalar
         assert normalizer > 0.0
         name_to_min_max_time = self._get_global_min_max_time(names, reset, barrier, normalizer)
-        if writer is not None:
+        if wandb_writer is not None:
+            import wandb
+
             for name in name_to_min_max_time:
                 _, max_time = name_to_min_max_time[name]
-                writer.add_scalar(name + '-time', max_time, iteration)
+                wandb.log({'timers/' + name + '-time': max_time}, step=iteration)

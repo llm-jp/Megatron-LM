@@ -133,6 +133,7 @@ def find_checkpoint_rank_0(checkpoints_path, iteration, release=False):
     parallelism is present, we need to look for both naming schemes if
     we don't know if the checkpoint has pipeline or expert parallelism.
     """
+    print_rank_0(f"checkpoint path: {checkpoints_path}, iteration: {iteration}")
 
     # Look for checkpoint with no pipelining and no expert parallelism
     filename = get_checkpoint_name(checkpoints_path, iteration, release,
@@ -344,6 +345,7 @@ def generate_state_dict(args, model, optimizer, opt_param_scheduler,
     state_dict['checkpoint_version'] = 3.0
     if iteration is not None:
         state_dict['iteration'] = iteration
+    state_dict['tokens'] = args.consumed_train_tokens
 
     if len(model) == 1:
         state_dict['model'] = (model[0].sharded_state_dict()
@@ -569,6 +571,8 @@ def load_args_from_checkpoint(args, load_arg='load',
     checkpoint_args = state_dict['args']
     checkpoint_version = state_dict.get('checkpoint_version', 0)
     args.iteration = state_dict['iteration']
+    if 'tokens' in state_dict:
+        args.consumed_train_tokens = state_dict['tokens']
 
     # One-off conversion for foundation models
     if hasattr(checkpoint_args, 'disable_bias_linear'):
@@ -640,7 +644,6 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
         if not checkpoint_exists(load_dir):
             raise FileNotFoundError("No checkpoint found in load directory or pretrained directory")
         args.finetune = True
-
 
     model = unwrap_model(model)
 

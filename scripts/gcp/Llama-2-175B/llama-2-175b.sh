@@ -101,7 +101,7 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/home/ext_kazuki_fujii_rio_gsic_titech/llm-jp-tokenizer/models/ver3.0/llm-jp-tokenizer-100k.ver3.0b1.model
-CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/Llama-2-175b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-cp${CONTEXT_PARALLEL_SIZE}
+CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/Llama-2-175b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-cp${CONTEXT_PARALLEL_SIZE}-latest
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 

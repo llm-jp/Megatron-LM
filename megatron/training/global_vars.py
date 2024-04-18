@@ -172,18 +172,18 @@ def _set_wandb_writer(args):
             raise ValueError("Please specify the wandb experiment name!")
 
         import wandb
-        if args.wandb_save_dir:
-            save_dir = args.wandb_save_dir
-        else:
-            # Defaults to the save dir.
-            save_dir = os.path.join(args.save, 'wandb')
+        from datetime import datetime
+
+        now = datetime.now()
+        now = now.strftime("%Y-%m-%d-%H-%M-%S")
+        exp_name = args.wandb_name + "-" + now
+
         wandb_kwargs = {
-            'dir': save_dir,
             'entity': args.wandb_entity,
-            'name': args.wandb_name,
+            'name': exp_name,
             'project': args.wandb_project,
             'config': vars(args)}
-        os.makedirs(wandb_kwargs['dir'], exist_ok=True)
+
         wandb.init(**wandb_kwargs)
         _GLOBAL_WANDB_WRITER = wandb
 

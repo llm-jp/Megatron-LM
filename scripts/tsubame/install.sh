@@ -7,11 +7,13 @@
 # priotiry: -5: normal, -4: high, -3: highest
 
 # Load modules
-module load cuda/12.1.0
-module load nccl/2.20.5
-module load openmpi/5.0.2-gcc
+module use ~/modulefiles
+
+module load ylab/cuda/12.1
+module load ylab/cudnn/8.9.7
+module load ylab/nccl/2.18.3
+module load ylab/hpcx/2.17.1
 module load ninja/1.11.1
-module load ~/modulefiles/cudnn/8.9.7
 
 # Set environment variables
 source .env/bin/activate

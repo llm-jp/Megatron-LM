@@ -247,3 +247,22 @@ prepend-path    PATH    $hpcx_mpi_dir/bin
 prepend-path    LD_LIBRARY_PATH $hpcx_mpi_dir/lib
 prepend-path    LIBRARY_PATH $hpcx_mpi_dir/lib
 ```
+
+## NCCL Error
+
+```bash
+[r16n5:881490] Warning: could not find environment variable "/gs/bs/tga-bayes-crest/fujii/modules/hpcx/hpcx-v2.17.1-gcc-inbox-redhat9-cuda12-x86_64/ompi/lib:/gs/bs/tga-bayes-crest/fujii/modules/nccl/nccl_2.18.3-1+cuda12.1_x86_64/lib:/gs/bs/tga-bayes-crest/fujii/modules/cuda/cuda-12.1/lib64
+```
+
+のようなエラーが出ており、`LD_LIBRARY_PATH` が正しく設定されていなかった。
+
+理由は調査したところ、1node では発生せず、2node 以上で発生していることが分かった。
+結局、mpirun に以下を追加するだけで良かった。
+
+```bash
+  -x LD_LIBRARY_PATH \
+  -x PATH \
+```
+
+これにより、`LD_LIBRARY_PATH` が正しく設定され、エラーが解消された。
+ABCI では設定しなくても問題なかったが、おそらく自前の module だから発生したものと思われる。

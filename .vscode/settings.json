@@ -1,7 +1,8 @@
 {
   "cSpell.words": [
     "OMPI",
-    "TFLOP"
+    "TFLOP",
+    "TSUBAME"
   ],
   "files.watcherExclude": {
     "**/.git/objects/**": true,

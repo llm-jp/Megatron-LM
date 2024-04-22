@@ -1,6 +1,6 @@
 #!/bin/sh
 #$ -cwd
-#$ -l node_f=1
+#$ -l node_f=2
 #$ -l h_rt=0:20:00
 #$ -o outputs/Llama-2-13b/$JOB_ID
 #$ -e outputs/Llama-2-13b/$JOB_ID
@@ -91,6 +91,8 @@ mpirun -np $NUM_GPUS \
   -x MASTER_ADDR=$MASTER_ADDR \
   -x MASTER_PORT=$MASTER_PORT \
   -x CUDA_DEVICE_MAX_CONNECTIONS=1 \
+  -x LD_LIBRARY_PATH \
+  -x PATH \
   -bind-to none \
   -x PATH \
   python pretrain_gpt.py \

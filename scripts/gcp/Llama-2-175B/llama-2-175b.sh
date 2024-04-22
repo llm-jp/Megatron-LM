@@ -344,6 +344,7 @@ mpirun -np $NUM_GPUS \
   --wandb-name ${JOB_NAME} \
   --wandb-project "Llama-2-175B" \
   --wandb-entity "nii-geniac" \
-  --use-gcp-dynamic-checkpointing
+  --use-gcp-dynamic-checkpointing \
+  --fp8-format hybrid
   # --log-timers-to-tensorboard \
   # --timing-log-level 2

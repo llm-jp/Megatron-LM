@@ -101,7 +101,7 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/home/ext_kazuki_fujii_rio_gsic_titech/llm-jp-tokenizer/models/ver3.0/llm-jp-tokenizer-100k.ver3.0b1.model
-CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/Llama-2-175b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-cp${CONTEXT_PARALLEL_SIZE}-latest
+CHECKPOINT_SAVE_DIR=/lustre/checkpoints/Llama-2-175b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-cp${CONTEXT_PARALLEL_SIZE}-latest
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -288,7 +288,7 @@ mpirun -np $NUM_GPUS \
   --context-parallel-size ${CONTEXT_PARALLEL_SIZE} \
   --sequence-parallel \
   --use-distributed-optimizer \
-  --distributed-timeout-minutes 30 \
+  --distributed-timeout-minutes 15 \
   --num-layers ${NUM_LAYERS} \
   --hidden-size ${HIDDEN_SIZE} \
   --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
@@ -320,7 +320,7 @@ mpirun -np $NUM_GPUS \
   --adam-beta2 0.95 \
   --adam-eps 1e-5 \
   --log-interval 1 \
-  --save-interval 500 \
+  --save-interval 250 \
   --eval-interval ${TRAIN_STEPS} \
   --eval-iters 10 \
   --bf16 \
@@ -341,6 +341,7 @@ mpirun -np $NUM_GPUS \
   --transformer-impl "transformer_engine" \
   --use-mpi \
   --use-z-loss \
+  --log-throughput \
   --wandb-name ${JOB_NAME} \
   --wandb-project "Llama-2-175B" \
   --wandb-entity "nii-geniac" \

@@ -21,6 +21,10 @@ def add_arguments(parser):
                        help='Sentencepiece tokenizer model.')
     group.add_argument('--megatron-path', type=str, default=None,
                        help='Base directory of deepspeed repository')
+    parser.add_argument('--bf16', action='store_true', help='Whether to load weights in bf16.')
+    group.add_argument('--loader-transformer-impl', default='local',
+                       choices=['local', 'transformer_engine'],
+                       help='Which Transformer implementation to use.')
 
 
 def verify_transformers_version():
@@ -43,12 +47,11 @@ def load_args_from_checkpoint(args):
     args.num_layers = llama_args["num_hidden_layers"]
     args.global_batch_size = 1024
     args.norm_epsilon = llama_args["rms_norm_eps"]
-    args.iteration = 1 # '0', 'release' don't work
+    args.iteration = 1  # '0', 'release' don't work
     args.add_position_embedding = False
     args.use_rotary_position_embeddings = True
     args.swiglu = True
     args.tokenizer_type = "Llama2Tokenizer"
-    args.fp16 = True
     args.normalization = "RMSNorm"
     args.add_bias_linear = False
     args.untie_embeddings_and_output_weights = True
@@ -60,6 +63,11 @@ def load_args_from_checkpoint(args):
     if "num_key_value_heads" in llama_args:
         args.group_query_attention = True
         args.num_query_groups = llama_args["num_key_value_heads"]
+
+    if "rope_theta" in llama_args:
+        args.rope_theta = llama_args["rope_theta"]
+    else:
+        args.rope_theta = 10000
 
 
 def set_preprocess_state(args, model, hf_model):
@@ -84,14 +92,13 @@ def set_attn_state(args, layer, hf_layer):
     # Reshape loaded weights.
     tp = args.tensor_model_parallel_size
     nh = args.num_attention_heads // tp
-    ng = (args.num_query_groups if args.group_query_attention \
-        else args.num_attention_heads) // tp
+    ng = (args.num_query_groups if args.group_query_attention else args.num_attention_heads) // tp
     dim = args.kv_channels
     assert nh % ng == 0
 
     # Copy weights (re-order dimensions for Megatron).
-    attn.query_key_value.weight.data.copy_(torch.cat([ 
-        hf_attn.q_proj.weight.reshape((ng, dim*nh//ng, -1)),
+    attn.query_key_value.weight.data.copy_(torch.cat([
+        hf_attn.q_proj.weight.reshape((ng, dim * nh // ng, -1)),
         hf_attn.k_proj.weight.reshape((ng, dim, -1)),
         hf_attn.v_proj.weight.reshape((ng, dim, -1)),
     ], dim=1).reshape((-1, args.hidden_size)))
@@ -130,7 +137,12 @@ def load_checkpoint_to_model(args):
     from transformers import LlamaForCausalLM
 
     # Load Huggingface model.
-    hf_model = LlamaForCausalLM.from_pretrained(args.load, device_map="cpu")
+    hf_model = LlamaForCausalLM.from_pretrained(
+        args.load,
+        torch_dtype=args.params_dtype,
+        low_cpu_mem_usage=True,
+        device_map="cpu"
+    )
 
     # Init Megatron model.
     model = model_provider(True, True).to(args.params_dtype)
@@ -195,6 +207,11 @@ def _load_checkpoint(queue, args):
 
     margs = validate_args(margs)
 
+    margs.use_mcore_models = False
+    margs.transformer_impl = args.loader_transformer_impl
+    if args.loader_transformer_impl == 'transformer_engine':
+        margs.attention_softmax_in_fp32 = True
+
     def check_for_arg(arg_name, default=None):
         if getattr(margs, arg_name, None) is None:
             if default is not None:
@@ -223,6 +240,7 @@ def _load_checkpoint(queue, args):
     # Determine how to make our models.
     assert args.model_type == 'GPT', 'Llama-2 is a GPT model.'
     margs.model_type = ModelType.encoder_or_decoder
+    margs.params_dtype = torch.bfloat16 if args.bf16 else torch.float16
 
     # Suppress warning about torch.distributed not being initialized.
     module.MegatronModule.embedding_warning_printed = True
@@ -259,11 +277,12 @@ def _load_checkpoint(queue, args):
     md.swiglu = margs.swiglu
     md.previous_tensor_parallel_size = margs.tensor_model_parallel_size
     md.previous_pipeline_parallel_size = margs.pipeline_model_parallel_size
-    md.true_vocab_size = None # skips padding in saver
+    md.true_vocab_size = None  # skips padding in saver
     md.make_vocab_size_divisible_by = None
     md.checkpoint_args = margs
     md.consumed_train_samples = 0
     md.consumed_valid_samples = 0
+    md.rope_theta = margs.rope_theta
 
     # Get first pipe stage.
     mpu.set_tensor_model_parallel_rank(0)
@@ -359,6 +378,6 @@ def _load_checkpoint(queue, args):
 def load_checkpoint(queue, args):
     try:
         _load_checkpoint(queue, args)
-    except:
+    except Exception as e:
         queue.put("exit")
-        raise
+        raise e

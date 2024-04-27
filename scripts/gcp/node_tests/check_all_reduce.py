@@ -36,14 +36,16 @@ def check_all_reduce(rank, world_size):
 
     # check if the tensor is the expected sum
     expected_sum = world_size * 0.5  # 0.5 is the expected mean of the random tensor
+    local_rank = torch_distributed.get_rank() % torch.cuda.device_count()
+    device = torch.device(f"cuda:{local_rank}")
     if not torch.isclose(
-        tensor, torch.tensor([expected_sum], device=(rank % torch.cuda.device_count())), atol=0.5 * world_size
+        tensor, torch.tensor([expected_sum], device=device), atol=0.5 * world_size
     ):
         print(f"Rank {rank}: hostname={hostname} Check failed! Tensor after all_reduce: {tensor.item()}")
         flag = False
 
     world_size = int(os.getenv('WORLD_SIZE', '1'))
-    world_size_tensor = torch.tensor([world_size], device=(rank % torch.cuda.device_count()))
+    world_size_tensor = torch.tensor([world_size], device=device)
     torch_distributed.all_reduce(
         world_size_tensor,
         op=torch_distributed.ReduceOp.MAX
@@ -56,7 +58,7 @@ def check_all_reduce(rank, world_size):
     iters_cuda = torch.tensor(
         [iteration],
         dtype=torch.long,
-        device=(rank % torch.cuda.device_count())
+        device=device
     )
     torch_distributed.all_reduce(iters_cuda, op=torch_distributed.ReduceOp.MAX)
     max_iter = iters_cuda[0].item()
@@ -66,7 +68,7 @@ def check_all_reduce(rank, world_size):
     iters_cuda = torch.tensor(
         [iteration],
         dtype=torch.long,
-        device=(rank % torch.cuda.device_count())
+        device=device
     )
     torch_distributed.all_reduce(iters_cuda, op=torch_distributed.ReduceOp.MIN)
     min_iter = iters_cuda[0].item()

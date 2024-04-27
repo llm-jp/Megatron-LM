@@ -8,6 +8,7 @@ import sys
 import numpy as np
 
 import torch
+import torch.distributed as torch_distributed
 
 from megatron.training import update_num_microbatches
 from megatron.core import mpu, tensor_parallel, dist_checkpointing
@@ -210,16 +211,18 @@ def read_metadata(tracker_filename):
         tracker_filename)
 
     # Get the max iteration retrieved across the ranks.
-    if torch.distributed.is_initialized():
-        iters_cuda = torch.tensor([iteration], dtype=torch.long, device='cuda')
-        torch.distributed.all_reduce(iters_cuda, op=torch.distributed.ReduceOp.MAX)
+    if torch_distributed.is_initialized():
+        local_rank = torch_distributed.get_rank() % torch.cuda.device_count()
+        device = torch.device(f"cuda:{local_rank}")
+        iters_cuda = torch.tensor([iteration], dtype=torch.long, device=device)
+        torch_distributed.all_reduce(iters_cuda, op=torch_distributed.ReduceOp.MAX)
         max_iter = iters_cuda[0].item()
 
         # We should now have all the same iteration.
         # If not, print a warning and chose the maximum
         # iteration across all ranks.
         if iteration != max_iter:
-            rank = torch.distributed.get_rank()
+            rank = torch_distributed.get_rank()
             print('WARNING: on rank {} found iteration {} in the '
                   'metadata while max iteration across the ranks '
                   'is {}, replacing it with max iteration.'.format(
@@ -288,7 +291,12 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
     if args.use_distributed_optimizer and not args.no_save_optim and optimizer is not None and not args.use_dist_ckpt:
         optim_checkpoint_name = \
             get_distributed_optimizer_checkpoint_name(checkpoint_name)
-        ensure_directory_exists(optim_checkpoint_name)
+        try:
+            ensure_directory_exists(optim_checkpoint_name)
+        except Exception as e:
+            print(f"rank={torch_distributed.get_rank()} failed to create directory for distributed optimizer checkpoint: {e}")
+            exit(1)
+
         optimizer.save_parameter_state(optim_checkpoint_name)
 
     # Collect args, model, RNG.

@@ -93,9 +93,9 @@ GLOBAL_BATCH_SIZE=1728
 TRAIN_STEPS=296699 # 2.1 T Tokens
 LR_DECAY_ITERS=268442  # 1.9 T Tokens
 
-LR=1e-4
+LR=8e-5
 MIN_LR=1e-5
-LR_WARMUP_STEPS=2000
+LR_WARMUP_STEPS=0
 WEIGHT_DECAY=0.1
 GRAD_CLIP=1
 
@@ -346,6 +346,7 @@ mpirun -np $NUM_GPUS \
   --wandb-project "Llama-2-175B" \
   --wandb-entity "nii-geniac" \
   --use-gcp-dynamic-checkpointing \
-  --fp8-format hybrid
+  --fp8-format hybrid \
+  --override-opt_param-scheduler
   # --log-timers-to-tensorboard \
   # --timing-log-level 2

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ckpt-convert-check
+#SBATCH --job-name=check
 #SBATCH --time=5:00:00
 #SBATCH --partition=a3
 #SBATCH --exclusive
@@ -23,5 +23,5 @@ ulimit -n 65536 1048576
 source .env/bin/activate
 
 python scripts/abci/megatron_to_hf/check.py \
-  --base-hf-model-path /home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/megatron-to-hf/Llama-2-7b-hf \
-  --converted-hf-model-path /home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Llama-2-7b-hf
+  --base-hf-model-path /home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Llama-2-70b-hf \
+  --converted-hf-model-path /home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/megatron-to-hf/Llama-2-70b-hf

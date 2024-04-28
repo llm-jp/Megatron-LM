@@ -30,7 +30,7 @@ PIPELINE_PARALLEL_SIZE=2
 MEGATRON_CHECKPOINT_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/hf-to-megatron/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
 HF_CHECKPOINT_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/megatron-to-hf/Llama-2-7b-hf
 
-mkdir -p ${MEGATRON_CHECKPOINT_DIR}
+mkdir -p ${HF_CHECKPOINT_DIR}
 
 # tokenizer config
 TOKENIZER_MODEL_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Llama-2-7b-hf

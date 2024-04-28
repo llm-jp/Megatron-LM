@@ -757,7 +757,7 @@ def _add_network_size_args(parser):
                        help='Percent of rotary dimension to use, default 100%%')
     group.add_argument('--rotary-interleaved', action='store_true',
                           help='Use interleaved rotary embedding.')
-    group.add_argument('--rope-theta', type=int, default=10000)
+    group.add_argument('--rope-theta', type=float, default=10000)
     group.add_argument("--use-embedding-scaling", action="store_true")
     group.add_argument('--rotary-seq-len-interpolation-factor', type=int, default=None,
                        help='Sequence length interpolation factor for rotary embeddings.')

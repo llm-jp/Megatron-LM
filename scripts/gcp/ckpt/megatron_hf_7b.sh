@@ -45,4 +45,5 @@ python tools/checkpoint/convert.py \
   --true-vocab-size 32000 \
   --hf-tokenizer-path ${TOKENIZER_MODEL_DIR} \
   --save-dtype bfloat16 \
+  --loader-transformer-impl "transformer_engine" \
   --megatron-path /home/ext_kazuki_fujii_rio_gsic_titech/src/Megatron-LM

@@ -44,4 +44,6 @@ python tools/checkpoint/convert.py \
   --target-pipeline-parallel-size ${PIPELINE_PARALLEL_SIZE} \
   --load-dir ${HF_CHECKPOINT_DIR} \
   --save-dir ${MEGATRON_CHECKPOINT_DIR} \
-  --tokenizer-model ${TOKENIZER_MODEL}
+  --tokenizer-model ${TOKENIZER_MODEL} \
+  --bf16 \
+  --saver-transformer-impl "transformer_engine"

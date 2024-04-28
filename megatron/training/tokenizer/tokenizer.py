@@ -504,10 +504,13 @@ class _Llama3Tokenizer:
         self.bos_id: Optional[int] = self.tokenizer.bos_token_id
         self.eos_id: Optional[int] = self.tokenizer.eos_token_id
         self.pad_id: Optional[int] = self.tokenizer.pad_token_id
+        assert self.tokenizer.pad_token_id is None
+        assert self.tokenizer.bos_token_id is not None and self.tokenizer.bos_token_id == 128000
+        assert self.tokenizer.eos_token_id is not None and self.tokenizer.eos_token_id == 128001
 
         self.vocab_size: int = self.tokenizer.vocab_size
 
-    def tokenize(self, text: str, bos=False, eos=False):
+    def tokenize(self, text: str, bos=True, eos=False):
         '''Default args for text completion, not chat/dialog.'''
         assert type(text) is str
         t = self.tokenizer.encode(text, add_special_tokens=False)  # type: ignore

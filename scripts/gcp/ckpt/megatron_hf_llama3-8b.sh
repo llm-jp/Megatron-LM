@@ -42,7 +42,6 @@ python tools/checkpoint/convert.py \
   --saver llama3_hf \
   --load-dir ${MEGATRON_CHECKPOINT_DIR} \
   --save-dir ${HF_CHECKPOINT_DIR} \
-  --true-vocab-size 32000 \
   --hf-tokenizer-path ${TOKENIZER_MODEL_DIR} \
   --save-dtype bfloat16 \
   --loader-transformer-impl "transformer_engine" \

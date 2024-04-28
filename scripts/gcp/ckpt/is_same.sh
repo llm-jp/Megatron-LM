@@ -23,5 +23,5 @@ ulimit -n 65536 1048576
 source .env/bin/activate
 
 python scripts/abci/megatron_to_hf/check.py \
-  --base-hf-model-path /home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Llama-2-70b-hf \
-  --converted-hf-model-path /home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/megatron-to-hf/Llama-2-70b-hf
+  --base-hf-model-path /home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Meta-Llama-3-8B \
+  --converted-hf-model-path /home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/megatron-to-hf/Llama-3-8b-hf

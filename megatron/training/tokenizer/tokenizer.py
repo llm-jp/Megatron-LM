@@ -4,6 +4,8 @@
 
 from abc import ABC
 from abc import abstractmethod
+import os
+from typing import Optional
 
 from megatron.core.datasets.megatron_tokenizer import MegatronTokenizer
 
@@ -41,6 +43,9 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'Llama2Tokenizer':
         assert args.tokenizer_model is not None
         tokenizer = _Llama2Tokenizer(args.tokenizer_model)
+    elif args.tokenizer_type == 'Llama3Tokenizer':
+        assert args.tokenizer_model is not None
+        tokenizer = _Llama3Tokenizer(args.tokenizer_model)
     elif args.tokenizer_type == 'NullTokenizer':
         assert args.vocab_size is not None
         tokenizer = _NullTokenizer(args.vocab_size)
@@ -482,6 +487,54 @@ class _Llama2Tokenizer(_SentencePieceTokenizer):
     @property
     def eod(self):
         return self.eos_id
+
+    @property
+    def additional_special_tokens_ids(self):
+        return None
+
+
+class _Llama3Tokenizer:
+    def __init__(self, model_file: str) -> None:
+        self.name = "Llama3Tokenizer"
+
+        from transformers import AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            pretrained_model_name_or_path=os.path.dirname(model_file)
+        )
+        self.bos_id: Optional[int] = self.tokenizer.bos_token_id
+        self.eos_id: Optional[int] = self.tokenizer.eos_token_id
+        self.pad_id: Optional[int] = self.tokenizer.pad_token_id
+
+        self.vocab_size: int = self.tokenizer.vocab_size
+
+    def tokenize(self, text: str, bos=False, eos=False):
+        '''Default args for text completion, not chat/dialog.'''
+        assert type(text) is str
+        t = self.tokenizer.encode(text, add_special_tokens=False)  # type: ignore
+        if bos and self.bos_id is not None:
+            t = [self.bos_id] + t
+        if eos and self.eos_id is not None:
+            t = t + [self.eos_id]
+        return t
+
+    def detokenize(self, ids: list[int]):
+        return self.tokenizer.decode(ids, skip_special_tokens=True)
+
+    @property
+    def cls(self):
+        return -1
+
+    @property
+    def sep(self):
+        return -1
+
+    @property
+    def mask(self):
+        return -1
+
+    @property
+    def eod(self):
+        return self.tokenizer.eos_token_id
 
     @property
     def additional_special_tokens_ids(self):

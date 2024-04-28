@@ -12,8 +12,12 @@ HF_LLAMA_70B_PATH = "/home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Llama
 @pytest.mark.parametrize("tp", ["1", "2"])
 @pytest.mark.parametrize("pp", ["1", "2"])
 @pytest.mark.parametrize("hf_path", [HF_LLAMA_7B_PATH, HF_LLAMA_70B_PATH])
-def test_llama_2_7b_hf_megatron_hf(tp, pp, hf_path):
-    with tempfile.TemporaryDirectory() as temp_dir_meg, tempfile.TemporaryDirectory() as temp_dir_hf:
+def test_llama_2_hf_megatron_hf(tp, pp, hf_path):
+    with tempfile.TemporaryDirectory(
+        dir="/home/ext_kazuki_fujii_rio_gsic_titech/tmp/megatron"
+    ) as temp_dir_meg, tempfile.TemporaryDirectory(
+        dir="/home/ext_kazuki_fujii_rio_gsic_titech/tmp/hf"
+    ) as temp_dir_hf:
         print('STEP 1: convert: hf -> megatron', flush=True)
         cmd = [
             "python",

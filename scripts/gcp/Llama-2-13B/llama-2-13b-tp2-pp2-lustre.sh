@@ -2,7 +2,8 @@
 #SBATCH --job-name=llama-2-13b
 #SBATCH --partition=a3
 #SBATCH --exclusive
-#SBATCH --nodes 8
+#SBATCH --nodes 2
+#SBATCH --nodelist=slurm0-a3-ghpc-57,slurm0-a3-ghpc-58
 #SBATCH --gpus-per-node=8
 #SBATCH --ntasks-per-node=8
 #SBATCH --output=outputs/llama-2-13b/%x-%j.out
@@ -97,15 +98,15 @@ GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=500679
 LR_DECAY_ITERS=452995
 
-LR=2.5e-4
-MIN_LR=2.5E-5
+LR=3e-4
+MIN_LR=3E-5
 LR_WARMUP_STEPS=2000
 WEIGHT_DECAY=0.1
 GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/home/ext_kazuki_fujii_rio_gsic_titech/llm-jp-tokenizer/models/ver3.0/llm-jp-tokenizer-100k.ver3.0b1.model
-CHECKPOINT_SAVE_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/Llama-2-13b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}
+CHECKPOINT_SAVE_DIR=/lustre/checkpoints/Llama-2-13b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}-bench
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -314,8 +315,8 @@ mpirun -np $NUM_GPUS \
   --adam-beta1 0.9 \
   --adam-beta2 0.95 \
   --log-interval 1 \
-  --save-interval 500 \
-  --eval-interval 500 \
+  --save-interval 10 \
+  --eval-interval 100 \
   --eval-iters 10 \
   --bf16 \
   --untie-embeddings-and-output-weights \
@@ -336,6 +337,7 @@ mpirun -np $NUM_GPUS \
   --fp8-format 'hybrid' \
   --use-mpi \
   --use-z-loss \
+  --use-embedding-scaling \
   --log-throughput \
   --wandb-name ${JOB_NAME} \
   --wandb-project "Llama-2-13B" \

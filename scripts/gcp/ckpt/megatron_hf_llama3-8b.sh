@@ -27,22 +27,21 @@ TENSOR_PARALLEL_SIZE=1
 PIPELINE_PARALLEL_SIZE=2
 
 # model config
-MEGATRON_CHECKPOINT_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/hf-to-megatron/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
-HF_CHECKPOINT_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/megatron-to-hf/Llama-2-7b-hf
+MEGATRON_CHECKPOINT_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/hf-to-megatron/Llama-3-8b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
+HF_CHECKPOINT_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/megatron-to-hf/Llama-3-8b-hf
 
 mkdir -p ${HF_CHECKPOINT_DIR}
 
 # tokenizer config
-TOKENIZER_MODEL_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Llama-2-7b-hf
+TOKENIZER_MODEL_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Meta-Llama-3-8B
 
 # convert
 python tools/checkpoint/convert.py \
   --model-type GPT \
   --loader mcore \
-  --saver llama2_hf \
+  --saver llama3_hf \
   --load-dir ${MEGATRON_CHECKPOINT_DIR} \
   --save-dir ${HF_CHECKPOINT_DIR} \
-  --true-vocab-size 32000 \
   --hf-tokenizer-path ${TOKENIZER_MODEL_DIR} \
   --save-dtype bfloat16 \
   --loader-transformer-impl "transformer_engine" \

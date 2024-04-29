@@ -27,21 +27,23 @@ TENSOR_PARALLEL_SIZE=1
 PIPELINE_PARALLEL_SIZE=2
 
 # model config
-HF_CHECKPOINT_DIR=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-7b-hf
-MEGATRON_CHECKPOINT_DIR=/home/ext_kazuki_fujii_turing_motors_c/checkpoints/hf-to-megatron/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
+HF_CHECKPOINT_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Llama-2-7b-hf
+MEGATRON_CHECKPOINT_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/checkpoints/hf-to-megatron/Llama-2-7b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
 
 mkdir -p ${MEGATRON_CHECKPOINT_DIR}
 
 # tokenizer config
-TOKENIZER_MODEL=/home/ext_kazuki_fujii_turing_motors_c/hf-checkpoints/Llama-2-7b-hf/tokenizer.model
+TOKENIZER_MODEL=/home/ext_kazuki_fujii_rio_gsic_titech/hf_checkpoints/Llama-2-7b-hf/tokenizer.model
 
 # convert
-python tools/checkpoint/util.py \
+python tools/checkpoint/convert.py \
   --model-type GPT \
   --loader llama2_hf \
-  --saver megatron_mcore \
+  --saver mcore \
   --target-tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
   --target-pipeline-parallel-size ${PIPELINE_PARALLEL_SIZE} \
   --load-dir ${HF_CHECKPOINT_DIR} \
   --save-dir ${MEGATRON_CHECKPOINT_DIR} \
-  --tokenizer-model ${TOKENIZER_MODEL}
+  --tokenizer-model ${TOKENIZER_MODEL} \
+  --bf16 \
+  --saver-transformer-impl "transformer_engine"

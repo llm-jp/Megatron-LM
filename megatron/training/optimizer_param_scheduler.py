@@ -79,8 +79,12 @@ class OptimizerParamScheduler(object):
         """Learning rate decay functions from:
               https://openreview.net/pdf?id=BJYwwY9ll pg. 4"""
 
-        max_lr = param_group.get('max_lr', self.max_lr)
-        min_lr = param_group.get('min_lr', self.min_lr)
+        if self.override_opt_param_scheduler:
+            max_lr = self.max_lr
+            min_lr = self.min_lr
+        else:
+            max_lr = param_group.get('max_lr', self.max_lr)
+            min_lr = param_group.get('min_lr', self.min_lr)
 
         # Use linear warmup for the initial part.
         if self.lr_warmup_steps > 0 and self.num_steps <= self.lr_warmup_steps:

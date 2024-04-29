@@ -762,7 +762,7 @@ def _add_network_size_args(parser):
                        help='Percent of rotary dimension to use, default 100%%')
     group.add_argument('--rotary-interleaved', action='store_true',
                           help='Use interleaved rotary embedding.')
-    group.add_argument('--rope-theta', type=int, default=10000)
+    group.add_argument('--rope-theta', type=float, default=10000)
     group.add_argument("--use-embedding-scaling", action="store_true")
     group.add_argument('--rotary-seq-len-interpolation-factor', type=int, default=None,
                        help='Sequence length interpolation factor for rotary embeddings.')
@@ -1480,6 +1480,7 @@ def _add_data_args(parser):
                                 'SentencePieceTokenizer',
                                 'GPTSentencePieceTokenizer',
                                 'Llama2Tokenizer',
+                                'Llama3Tokenizer',
                                 'NullTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,

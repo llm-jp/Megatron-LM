@@ -300,7 +300,6 @@ def save_checkpoint(queue, args):
                   "Default to 1.")
             args.target_pipeline_parallel_size = 1
 
-
     # Arguments do sanity checks on the world size, but we don't care,
     # so trick it into thinking we are plenty of processes
     if args.target_tensor_parallel_size is not None and args.target_pipeline_parallel_size is not None:
@@ -328,6 +327,7 @@ def save_checkpoint(queue, args):
                 '--no-save-optim',
                 '--no-save-rng',
                 '--no-initialization',
+                '--rope-theta', str(md.rope_theta),
                 '--save-interval', '1',
                 '--save', args.save_dir
                 ]

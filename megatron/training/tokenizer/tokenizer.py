@@ -493,9 +493,10 @@ class _Llama2Tokenizer(_SentencePieceTokenizer):
         return None
 
 
-class _Llama3Tokenizer:
-    def __init__(self, model_file: str) -> None:
+class _Llama3Tokenizer(MegatronTokenizer):
+    def __init__(self, model_file: str, vocab_extra_ids=0) -> None:
         self.name = "Llama3Tokenizer"
+        super().__init__(model_file, vocab_extra_ids=vocab_extra_ids)
 
         from transformers import AutoTokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -504,11 +505,11 @@ class _Llama3Tokenizer:
         self.bos_id: Optional[int] = self.tokenizer.bos_token_id
         self.eos_id: Optional[int] = self.tokenizer.eos_token_id
         self.pad_id: Optional[int] = self.tokenizer.pad_token_id
+
         assert self.tokenizer.pad_token_id is None
         assert self.tokenizer.bos_token_id is not None and self.tokenizer.bos_token_id == 128000
         assert self.tokenizer.eos_token_id is not None and self.tokenizer.eos_token_id == 128001
-
-        self.vocab_size: int = self.tokenizer.vocab_size
+        assert len(self.tokenizer) >= 128256, f"vocab_size: {len(self.tokenizer)}"
 
     def tokenize(self, text: str, bos=True, eos=False):
         '''Default args for text completion, not chat/dialog.'''
@@ -543,12 +544,24 @@ class _Llama3Tokenizer:
     def additional_special_tokens_ids(self):
         return None
 
+    @property
+    def vocab(self):
+        return self.tokenizer.get_vocab()
+
+    @property
+    def inv_vocab(self):
+        return {v: k for k, v in self.tokenizer.get_vocab().items()}
+
+    @property
+    def vocab_size(self):
+        return len(self.tokenizer)
+
 
 class _NullTokenizer:
     def __init__(self, vocab_size):
         vocab_size = int(vocab_size)
         self._eos_id = vocab_size
-        self.vocab_size = vocab_size+1
+        self.vocab_size = vocab_size + 1
 
     def tokenize(self, text):
         return [int(x) for x in text.split(' ')]

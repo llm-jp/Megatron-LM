@@ -873,8 +873,10 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
         tokens_per_sec = samples_per_sec * args.seq_length
         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
+        throughput = num_floating_point_operations(args, batch_size) / (
+            elapsed_time_per_iteration * 10**12 * args.world_size)
 
-        wandb_stats["stats/tflops"] = tflops
+        wandb_stats["stats/tflops"] = throughput
         wandb_stats["stats/samples_per_sec"] = samples_per_sec
         wandb_stats["stats/samples_per_sec_per_replica"] = samples_per_sec_per_replica
         wandb_stats["stats/tokens_per_sec"] = tokens_per_sec
@@ -885,8 +887,6 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         if wandb_writer and is_last_rank():
             wandb_writer.log(wandb_stats, step=iteration)
 
-        throughput = num_floating_point_operations(args, batch_size) / (
-            elapsed_time_per_iteration * 10**12 * args.world_size)
         if args.log_timers_to_tensorboard:
             if writer:
                 writer.add_scalar('iteration-time',
@@ -910,7 +910,6 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
                     wandb_writer.log({'throughput': throughput}, iteration)
         log_string += ' iteration time: {:.3f} s'.format(elapsed_time)
         log_string += ' samples/sec: {:.1f} |'.format(samples_per_sec)
-        log_string += ' TFLOPS(original): {:.1f} |'.format(tflops)
         assert learning_rate is not None
         # Decoupled_learning_rate should be not None only on first and last pipeline stage.
         log_string += ' learning rate: {:.6E} |'.format(learning_rate)

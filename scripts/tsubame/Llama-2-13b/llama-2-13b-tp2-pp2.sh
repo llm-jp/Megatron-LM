@@ -4,7 +4,7 @@
 #$ -l h_rt=0:20:00
 #$ -o outputs/Llama-2-13b/$JOB_ID
 #$ -e outputs/Llama-2-13b/$JOB_ID
-#$ -p -3
+#$ -p -5
 
 # Load modules
 module use ~/modulefiles

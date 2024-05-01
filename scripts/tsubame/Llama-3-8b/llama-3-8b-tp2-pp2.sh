@@ -1,7 +1,7 @@
 #!/bin/sh
 #$ -cwd
 #$ -l node_f=16
-#$ -l h_rt=24:00:00
+#$ -l h_rt=96:00:00
 #$ -o outputs/Llama-3-8b/$JOB_ID
 #$ -e outputs/Llama-3-8b/$JOB_ID
 #$ -p -5
@@ -54,7 +54,7 @@ CONTEXT_PARALLEL_SIZE=1
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
 # training config
-MICRO_BATCH_SIZE=1
+MICRO_BATCH_SIZE=2
 GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=12500
 LR_DECAY_ITERS=12500
@@ -62,7 +62,7 @@ LR_DECAY_ITERS=12500
 LR=2.5e-5
 MIN_LR=2.5E-6
 LR_WARMUP_STEPS=1000
-WEIGHT_DECAY=0.1
+WEIGHT_DECAY=0.05
 GRAD_CLIP=1
 
 # model config

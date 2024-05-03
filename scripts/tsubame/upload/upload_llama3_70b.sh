@@ -8,6 +8,8 @@
 
 set -e
 
+source .env/bin/activate
+
 start=1000
 end=1000
 increment=500

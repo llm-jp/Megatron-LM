@@ -26,8 +26,8 @@ ITERATION=1500
 FORMATTED_ITERATION=$(printf "%07d" $ITERATION)
 
 # model config
-MEGATRON_CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-8b/swallow-ja_8-en_1_code_1/tp2-pp2-ct1-LR1.0E-4-MINLR1.0E-5-WD0.1
-HF_CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/megatron-to-hf/Llama-3-8b-hf/LR1.0E-4-MINLR1.0E-5-WD0.1/iter_${FORMATTED_ITERATION}
+MEGATRON_CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-8b/swallow-ja_8-en_1_code_1/tp2-pp2-ct1-LR2.5e-5-MINLR2.5E-6-WD0.05
+HF_CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/megatron-to-hf/Llama-3-8b-hf/LR2.5e-5-MINLR2.5E-6-WD0.05/iter_${FORMATTED_ITERATION}
 
 mkdir -p ${HF_CHECKPOINT_DIR}
 

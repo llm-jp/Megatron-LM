@@ -1,4 +1,10 @@
-#!/bin/bash
+#!/bin/sh
+#$ -cwd
+#$ -l cpu_160=1
+#$ -l h_rt=24:00:00
+#$ -o outputs/upload/llama-3-8b/$JOB_ID
+#$ -e outputs/upload/llama-3-8b/$JOB_ID
+#$ -p -5
 
 set -e
 

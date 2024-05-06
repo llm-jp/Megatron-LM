@@ -22,12 +22,12 @@ source .env/bin/activate
 TENSOR_PARALLEL_SIZE=2
 PIPELINE_PARALLEL_SIZE=2
 
-ITERATION=1500
+ITERATION=2000
 FORMATTED_ITERATION=$(printf "%07d" $ITERATION)
 
 # model config
-MEGATRON_CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-8b/swallow-ja_8-en_1_code_1/tp2-pp2-ct1-LR2.5e-5-MINLR2.5E-6-WD0.05
-HF_CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/megatron-to-hf/Llama-3-8b-hf/LR2.5e-5-MINLR2.5E-6-WD0.05/iter_${FORMATTED_ITERATION}
+MEGATRON_CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-8b/swallow-ja_8-en_1_code_1/tp2-pp2-ct1-LR7.5E-6-MINLR1.0E-6-WD0.1-WARMUP1000
+HF_CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/megatron-to-hf/Llama-3-8b-hf/LR7.5E-6-MINLR1.0E-6-WD0.1-WARMUP1000/iter_${FORMATTED_ITERATION}
 
 mkdir -p ${HF_CHECKPOINT_DIR}
 

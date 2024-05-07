@@ -1,7 +1,7 @@
 #!/bin/sh
 #$ -cwd
 #$ -l node_f=16
-#$ -l h_rt=96:00:00
+#$ -l h_rt=24:00:00
 #$ -o outputs/Llama-3-8b/$JOB_ID
 #$ -e outputs/Llama-3-8b/$JOB_ID
 #$ -p -5
@@ -59,16 +59,16 @@ GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=12500
 LR_DECAY_ITERS=12500
 
-LR=2.5e-5
-MIN_LR=2.5E-6
+LR=1.0E-5
+MIN_LR=1.0E-6
 LR_WARMUP_STEPS=1000
-WEIGHT_DECAY=0.05
+WEIGHT_DECAY=0.1
 GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/gs/bs/tga-bayes-crest/fujii/hf-checkpoints/Meta-Llama-3-8B/tokenizer.json
 CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/hf-to-megatron/Llama-3-8b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
-CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-8b/swallow-ja_8-en_1_code_1/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}-LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}
+CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-8b/swallow-ja_8-en_1_code_1/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}-LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}-WARMUP${LR_WARMUP_STEPS}
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 

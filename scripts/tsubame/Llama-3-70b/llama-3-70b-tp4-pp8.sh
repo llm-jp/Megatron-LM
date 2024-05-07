@@ -1,7 +1,7 @@
 #!/bin/sh
 #$ -cwd
 #$ -l node_f=16
-#$ -l h_rt=24:00:00
+#$ -l h_rt=120:00:00
 #$ -o outputs/Llama-3-70b/$JOB_ID
 #$ -e outputs/Llama-3-70b/$JOB_ID
 #$ -p -5
@@ -59,8 +59,8 @@ GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=12500
 LR_DECAY_ITERS=12500
 
-LR=2.5e-5
-MIN_LR=2.5E-6
+LR=1.0E-5
+MIN_LR=1.0E-6
 LR_WARMUP_STEPS=1000
 WEIGHT_DECAY=0.1
 GRAD_CLIP=1
@@ -174,7 +174,7 @@ mpirun -np $NUM_GPUS \
   --adam-beta1 0.9 \
   --adam-beta2 0.95 \
   --log-interval 1 \
-  --save-interval 500 \
+  --save-interval 250 \
   --eval-interval 500 \
   --eval-iters 10 \
   --bf16 \

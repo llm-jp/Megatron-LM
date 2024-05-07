@@ -1,9 +1,9 @@
 #!/bin/sh
 #$ -cwd
-#$ -l node_f=16
+#$ -l node_f=32
 #$ -l h_rt=24:00:00
-#$ -o outputs/mixtral-8x7b/$JOB_ID
-#$ -e outputs/mixtral-8x7b/$JOB_ID
+#$ -o outputs/mixtral-8x22b/$JOB_ID
+#$ -e outputs/mixtral-8x22b/$JOB_ID
 #$ -p -5
 
 # Load modules
@@ -39,11 +39,11 @@ while read -r hostname _ rest; do
 done <"$PE_HOSTFILE" >"$HOSTFILE_NAME"
 
 # model config
-# mixtral-8x7B-v0.1: https://huggingface.co/mistralai/Mixtral-8x7B-v0.1/blob/main/config.json
-HIDDEN_SIZE=4096
-FFN_HIDDEN_SIZE=14336 # intermediate size (HuggingFace)
-NUM_LAYERS=32
-NUM_HEADS=32
+# mixtral-8x22B: https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/blob/main/config.json
+HIDDEN_SIZE=6144
+FFN_HIDDEN_SIZE=16384 # intermediate size (HuggingFace)
+NUM_LAYERS=56
+NUM_HEADS=48
 NUM_KEY_VALUE_HEADS=8
 SEQ_LENGTH=4096
 
@@ -51,13 +51,13 @@ NUM_EXPERTS=8
 NUM_EXPERT_TOP_K=2
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=2
-PIPELINE_PARALLEL_SIZE=4
+TENSOR_PARALLEL_SIZE=4
+PIPELINE_PARALLEL_SIZE=8
 CONTEXT_PARALLEL_SIZE=1
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
 # training config
-MICRO_BATCH_SIZE=2
+MICRO_BATCH_SIZE=1
 GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=12500
 LR_DECAY_ITERS=12500
@@ -70,7 +70,7 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/gs/bs/tga-bayes-crest/fujii/hf-checkpoints/Meta-Llama-3-8B/tokenizer.json
-CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/mixtral-8x7B/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}/LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}-WARMUP${LR_WARMUP_STEPS}
+CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/mixtral-8x22B/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}/LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}-WARMUP${LR_WARMUP_STEPS}
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -84,7 +84,7 @@ TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1691212948 /gs/bs/tga-bayes-crest/Swallow/bi
 TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 2000000000 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/en_wiki_merged_train_text_document"
 
 # job name
-JOB_NAME="Mixtral-8x7b-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGTH}s-DP=${DATA_PARALLEL_SIZE}-TP=${TENSOR_PARALLEL_SIZE}-PP=${PIPELINE_PARALLEL_SIZE}-BS=${GLOBAL_BATCH_SIZE}-LR=${LR}-MINLR=${MIN_LR}-WARMUP=${LR_WARMUP_STEPS}-WD=${WEIGHT_DECAY}-GC=${GRAD_CLIP}-z-loss"
+JOB_NAME="Mixtral-8x22b-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGTH}s-DP=${DATA_PARALLEL_SIZE}-TP=${TENSOR_PARALLEL_SIZE}-PP=${PIPELINE_PARALLEL_SIZE}-BS=${GLOBAL_BATCH_SIZE}-LR=${LR}-MINLR=${MIN_LR}-WARMUP=${LR_WARMUP_STEPS}-WD=${WEIGHT_DECAY}-GC=${GRAD_CLIP}-z-loss"
 
 # checkpoint load
 CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"
@@ -115,7 +115,7 @@ mpirun -np $NUM_GPUS \
   --num-experts ${NUM_EXPERTS} \
   --moe-router-load-balancing-type aux_loss \
   --moe-router-topk 2 \
-  --moe-aux-loss-coeff 0.02 \
+  --moe-aux-loss-coeff 0.001 \
   --seq-length ${SEQ_LENGTH} \
   --max-position-embeddings ${SEQ_LENGTH} \
   --micro-batch-size ${MICRO_BATCH_SIZE} \

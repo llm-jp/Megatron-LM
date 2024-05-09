@@ -114,6 +114,7 @@ mpirun -np $NUM_GPUS \
   --num-query-groups ${NUM_KEY_VALUE_HEADS} \
   --num-experts ${NUM_EXPERTS} \
   --moe-router-load-balancing-type aux_loss \
+  --moe-grouped-gemm \
   --moe-router-topk 2 \
   --moe-aux-loss-coeff 0.02 \
   --seq-length ${SEQ_LENGTH} \

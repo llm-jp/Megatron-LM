@@ -48,7 +48,7 @@ NUM_KEY_VALUE_HEADS=8
 SEQ_LENGTH=8192
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=4  # fixed (tsubame has 4 GPUs per node)
+TENSOR_PARALLEL_SIZE=4 # fixed (tsubame has 4 GPUs per node)
 PIPELINE_PARALLEL_SIZE=8
 CONTEXT_PARALLEL_SIZE=1
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
@@ -68,7 +68,7 @@ GRAD_CLIP=1
 # model config
 TOKENIZER_MODEL=/gs/bs/tga-bayes-crest/fujii/hf-checkpoints/Meta-Llama-3-70B/tokenizer.json
 CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/hf-to-megatron/Llama-3-70b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
-CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-70B/swallow-ja_8-en_1_code_1/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}-LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}
+CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-70B/swallow-exp2/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}-LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -76,44 +76,38 @@ mkdir -p ${CHECKPOINT_SAVE_DIR}
 TRAIN_DATA_PATH=""
 
 # ja swallow
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 9378396064 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/split_0_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 9286165138 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/split_1_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 11076093152 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/split_2_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14605244895 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/split_3_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 33962887802 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/split_4_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 8180778786 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/split_0_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 8100325805 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/split_1_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 9661681216 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/split_2_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 12740161714 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/split_3_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 29625840901 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/split_4_text_document"
 
 # ja wiki
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1691212948 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/ja_wiki_merged_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1691211578 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/ja_wiki_merged_text_document"
 
-# en wiki
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 2000000000 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/en_wiki_merged_train_text_document"
+# en parallel corpus
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 882674099 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/default_plain_text_format_text_document"
 
 # en arxiv
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 2000000000 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/lumi_en_arxiv_merge_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 5000000000 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/lumi_en_arxiv_merge_text_document"
 
 # en refinedweb
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 2000000000 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/lumi_en_falcon_merge_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 5000000000 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/lumi_en_falcon_merge_text_document"
 
-# en dolma books
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 2000000000 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/dolma-books_0000_text_document"
+# code algebric stack
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 4302726319 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/algebraic-stack_text_document"
 
-# en dolma scientific papers
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 251468244.4 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/dolma-pes2o_0000_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 643939223.6 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/dolma-pes2o_0001_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 594871644.6 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/dolma-pes2o_0002_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 509720887.3 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/dolma-pes2o_0003_text_document"
-
-# code algebraic
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 2697842318 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/algebraic-stack_text_document"
-
-# code vault
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 2697842318 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/The_Vault_text_document"
+# code the vault
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 4302726319 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/The_Vault_text_document"
 
 # code starcoder
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 2697842318 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/starcoderdata_jsonl_1_10_merged_file_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 4302726319 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/starcoderdata_jsonl_1_10_merged_file_text_document"
 
-# code satrcoder ja
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1906473047 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3/starcoderdata_ja_text_document"
+# code starcoder ja
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1906420627 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/starcoderdata_ja_text_document"
+
+# code open-web-math
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 4302726319 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/proof-pile-2-train_merged_open-web-math_text_document"
 
 # job name
 JOB_NAME="Llama-3-70b-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGTH}s-DP=${DATA_PARALLEL_SIZE}-TP=${TENSOR_PARALLEL_SIZE}-PP=${PIPELINE_PARALLEL_SIZE}-BS=${GLOBAL_BATCH_SIZE}-LR=${LR}-MINLR=${MIN_LR}-WARMUP=${LR_WARMUP_STEPS}-WD=${WEIGHT_DECAY}-GC=${GRAD_CLIP}-z-loss"

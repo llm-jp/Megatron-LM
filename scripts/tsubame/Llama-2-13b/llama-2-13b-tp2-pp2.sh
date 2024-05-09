@@ -1,7 +1,7 @@
 #!/bin/sh
 #$ -cwd
 #$ -l node_f=2
-#$ -l h_rt=0:20:00
+#$ -l h_rt=0:30:00
 #$ -o outputs/Llama-2-13b/$JOB_ID
 #$ -e outputs/Llama-2-13b/$JOB_ID
 #$ -p -5
@@ -53,7 +53,7 @@ CONTEXT_PARALLEL_SIZE=1
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
 # training config
-MICRO_BATCH_SIZE=1
+MICRO_BATCH_SIZE=2
 GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=500679
 LR_DECAY_ITERS=452995
@@ -154,5 +154,5 @@ mpirun -np $NUM_GPUS \
   --use-embedding-scaling \
   --log-throughput \
   --wandb-name ${JOB_NAME} \
-  --wandb-project "Llama-2-13B" \
-  --wandb-entity "prj-jalm"
+  --wandb-project "TSUBAME-FLOPS" \
+  --wandb-entity "okoge"

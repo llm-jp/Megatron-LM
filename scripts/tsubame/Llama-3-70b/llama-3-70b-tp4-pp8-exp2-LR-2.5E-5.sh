@@ -59,8 +59,8 @@ GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=12500
 LR_DECAY_ITERS=12500
 
-LR=1.0E-5
-MIN_LR=1.0E-6
+LR=2.5E-5
+MIN_LR=2.5E-6
 LR_WARMUP_STEPS=1000
 WEIGHT_DECAY=0.1
 GRAD_CLIP=1
@@ -68,7 +68,7 @@ GRAD_CLIP=1
 # model config
 TOKENIZER_MODEL=/gs/bs/tga-bayes-crest/fujii/hf-checkpoints/Meta-Llama-3-70B/tokenizer.json
 CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/hf-to-megatron/Llama-3-70b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
-CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-70B/swallow-exp2/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}-LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}
+CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-3-70B/swallow-exp2/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}/LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -110,7 +110,7 @@ TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1906420627 /gs/bs/tga-bayes-crest/Swallow/bi
 TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 4302726319 /gs/bs/tga-bayes-crest/Swallow/binarized/Meta-Llama-3_original_transformers-4.40.1/proof-pile-2-train_merged_open-web-math_text_document"
 
 # job name
-JOB_NAME="Llama-3-70b-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGTH}s-DP=${DATA_PARALLEL_SIZE}-TP=${TENSOR_PARALLEL_SIZE}-PP=${PIPELINE_PARALLEL_SIZE}-BS=${GLOBAL_BATCH_SIZE}-LR=${LR}-MINLR=${MIN_LR}-WARMUP=${LR_WARMUP_STEPS}-WD=${WEIGHT_DECAY}-GC=${GRAD_CLIP}-z-loss"
+JOB_NAME="Llama-3-70b-exp2-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGTH}s-DP=${DATA_PARALLEL_SIZE}-TP=${TENSOR_PARALLEL_SIZE}-PP=${PIPELINE_PARALLEL_SIZE}-BS=${GLOBAL_BATCH_SIZE}-LR=${LR}-MINLR=${MIN_LR}-WARMUP=${LR_WARMUP_STEPS}-WD=${WEIGHT_DECAY}-GC=${GRAD_CLIP}-z-loss"
 
 # checkpoint load
 if [[ -f "${CHECKPOINT_SAVE_DIR}/latest_checkpointed_iteration.txt" ]]; then

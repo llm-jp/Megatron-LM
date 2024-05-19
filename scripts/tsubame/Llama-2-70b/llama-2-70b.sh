@@ -69,7 +69,6 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/gs/fs/tga-bayes-crest/taishi/workspace/llm-jp-tokenizer/models/ver3.0/llm-jp-tokenizer-100k.ver3.0b1.model
-CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-2-70b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}
 CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-2-70b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}-LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}-WARMUP${LR_WARMUP_STEPS}
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
@@ -239,14 +238,7 @@ VALID_DATA_PATH="${VALID_DATA_PATH} 6145 ${DATASET_DIR}/validation/zh/wiki_0000.
 # job name
 JOB_NAME="TSUBAME4-Llama-2-70b-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGTH}s-DP=${DATA_PARALLEL_SIZE}-TP=${TENSOR_PARALLEL_SIZE}-PP=${PIPELINE_PARALLEL_SIZE}-BS=${GLOBAL_BATCH_SIZE}-LR=${LR}-MINLR=${MIN_LR}-WARMUP=${LR_WARMUP_STEPS}-WD=${WEIGHT_DECAY}-GC=${GRAD_CLIP}-z-loss"
 
-# checkpoint load
-if [[ -f "${CHECKPOINT_SAVE_DIR}/latest_checkpointed_iteration.txt" ]]; then
-  # resume training
-  CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"
-else
-  # first training
-  CHECKPOINT_ARGS="--load ${CHECKPOINT_DIR} --no-load-rng --no-load-optim"
-fi
+CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"
 
 # run
 mpirun -np $NUM_GPUS \
@@ -300,7 +292,6 @@ mpirun -np $NUM_GPUS \
   --eval-interval 500 \
   --eval-iters 10 \
   --bf16 \
-  --use-checkpoint-args \
   --untie-embeddings-and-output-weights \
   --no-position-embedding \
   --position-embedding-type rope \

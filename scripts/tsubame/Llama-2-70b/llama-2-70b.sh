@@ -309,8 +309,10 @@ mpirun -np $NUM_GPUS \
   --recompute-granularity "selective" \
   --attention-softmax-in-fp32 \
   --transformer-impl "transformer_engine" \
+  --fp8-format hybrid \
   --use-mpi \
   --use-z-loss \
+  --distributed-timeout-minutes 20 \ 
   --log-throughput \
   --wandb-name ${JOB_NAME} \
   --wandb-project "TSUBAME4-Llama-2-70b" \

@@ -340,4 +340,3 @@ mpirun -np $NUM_GPUS \
   --wandb-name ${JOB_NAME} \
   --wandb-project "Llama-2-13B" \
   --wandb-entity "nii-geniac" \
-  --use-gcp-dynamic-checkpointing

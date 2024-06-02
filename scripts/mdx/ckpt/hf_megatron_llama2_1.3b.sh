@@ -9,8 +9,6 @@ TENSOR_PARALLEL_SIZE=1
 PIPELINE_PARALLEL_SIZE=1
 
 # model config
-MEGATRON_CHECKPOINT_DIR=/model/checkpoints_1.3b_mcore/CC_v2_code20K_en40K_ja60K_ver2.2/
-
 HF_CHECKPOINT_DIR=/model/checkpoints_1.3b_hf/CC_v2_code20K_en40K_ja60K_ver2.2/
 MEGATRON_CHECKPOINT_DIR=/model/checkpoints_1.3b_mcore/CC_v2_code20K_en40K_ja60K_ver2.2/
 

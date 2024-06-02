@@ -52,7 +52,8 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/model/llmjp0/llm-jp-tokenizer/models/ver2.2/code20K_en40K_ja60K.ver2.2.model
-CHECKPOINT_SAVE_DIR=/model/checkpoints_1.3b_mcore/CC_v2_code20K_en40K_ja60K_ver2.2/
+CHECKPOINT_DIR=/model/checkpoints_1.3b_mcore/CC_v2_code20K_en40K_ja60K_ver2.2/
+CHECKPOINT_SAVE_DIR=/model/checkpoints_1.3b_dense_cp/CC_v2_code20K_en40K_ja60K_ver2.2/
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -137,7 +138,7 @@ JOB_NAME="dense-1.3b-cp-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGT
 
 # --norm-epsilon 1e-5 : conifg.json (RMS norm)
 
-# # checkpoint load
+# checkpoint load
 if [[ -f "${CHECKPOINT_SAVE_DIR}/latest_checkpointed_iteration.txt" ]]; then
   # resume training
   CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"

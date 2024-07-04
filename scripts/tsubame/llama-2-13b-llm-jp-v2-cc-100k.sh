@@ -52,7 +52,7 @@ PIPELINE_PARALLEL_SIZE=1 # num layers 40: Llama-2 13B
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
 # training config
-MICRO_BATCH_SIZE=2
+MICRO_BATCH_SIZE=1
 GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=61000 # e.g. llama: 1T tokens / 4M tokens_per_batch = 250000 steps
 # 今回は約270B Tokens #実際の数値は250B Tokens

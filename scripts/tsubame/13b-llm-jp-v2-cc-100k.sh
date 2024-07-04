@@ -70,7 +70,7 @@ CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-2-13b/CC_v2_code20K_en4
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
 # data config
-DATASET_DIR=/gs/bs/tgh-NII-LLM/datasets/pretrain/llm-jp-corpus-v2.1-CC/binarized/ver2.2/code20K_en40K_ja60K/CC-ver2.1_Llama2Tokenizer
+DATASET_DIR=/gs/bs/tgh-NII-LLM/datasets/pretrain/llm-jp-corpus/v3.0.0/training_resharded_tokenize_ver2.2_code20K_en40K_ja60K.ver2.2
 
 TRAIN_DATA_PATH=""
 

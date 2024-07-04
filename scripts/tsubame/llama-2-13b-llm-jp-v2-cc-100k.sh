@@ -47,12 +47,12 @@ NUM_HEADS=40
 SEQ_LENGTH=4096
 
 # distributed settings
-TENSOR_PARALLEL_SIZE=4   # fixed
-PIPELINE_PARALLEL_SIZE=1 # num layers 40: Llama-2 13B
+TENSOR_PARALLEL_SIZE=2   # fixed
+PIPELINE_PARALLEL_SIZE=2 # num layers 40: Llama-2 13B
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
 # training config
-MICRO_BATCH_SIZE=1
+MICRO_BATCH_SIZE=2
 GLOBAL_BATCH_SIZE=1024
 TRAIN_STEPS=61000 # e.g. llama: 1T tokens / 4M tokens_per_batch = 250000 steps
 # 今回は約270B Tokens #実際の数値は250B Tokens
@@ -230,13 +230,7 @@ JOB_NAME="exp-A-13b-${NODE_TYPE}-${NUM_NODES}node-${NUM_GPUS}gpu-${SEQ_LENGTH}s-
 # --norm-epsilon 1e-5 : conifg.json (RMS norm)
 
 # # checkpoint load
-if [[ -f "${CHECKPOINT_SAVE_DIR}/latest_checkpointed_iteration.txt" ]]; then
-  # resume training
-  CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"
-else
-  # first training
-  CHECKPOINT_ARGS="--load ${CHECKPOINT_DIR} --no-load-rng --no-load-optim"
-fi
+CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"
 
 # run
 mpirun -np $NUM_GPUS \

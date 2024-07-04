@@ -218,7 +218,7 @@ TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 3909303063 ${DATASET_DIR}/train/en/dolma-wik
 TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 4799264925 ${DATASET_DIR}/train/en/wiki_0000.jsonl_text_document"
 
 # zh wiki
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1149288693 ${DATASET_DIR}/train/zh/wiki_0000.jsonl_text_document.bin wiki_0000.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1149288693 ${DATASET_DIR}/train/zh/wiki_0000.jsonl_text_document"
 
 # ko wiki
 TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1267380188 ${DATASET_DIR}/train/ko/wiki_0000.jsonl_text_document"

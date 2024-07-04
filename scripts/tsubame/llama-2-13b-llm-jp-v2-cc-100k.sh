@@ -2,8 +2,8 @@
 #$ -cwd
 #$ -l node_f=32
 #$ -l h_rt=10:00:00:00
-#$ -o outputs/Llama-2-13b/$JOB_ID
-#$ -e outputs/Llama-2-13b/$JOB_ID
+#$ -o outputs/Llama-2-13b/$JOB_ID.out
+#$ -e outputs/Llama-2-13b/$JOB_ID.out
 #$ -p -5
 
 # Load modules

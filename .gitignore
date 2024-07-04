@@ -20,3 +20,5 @@ wandb/
 
 # hostfile
 hostfile/
+
+outputs/

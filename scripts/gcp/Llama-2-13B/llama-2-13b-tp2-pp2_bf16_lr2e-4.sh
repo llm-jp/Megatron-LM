@@ -337,6 +337,7 @@ mpirun -np $NUM_GPUS \
   --use-mpi \
   --use-z-loss \
   --log-throughput \
+  --distributed-timeout-minutes 15 \
   --wandb-name ${JOB_NAME} \
   --wandb-project "Llama-2-13B" \
   --wandb-entity "nii-geniac" \

@@ -6,6 +6,7 @@
 import torch
 
 from megatron.core import mpu
+from megatron.training import get_tokenizer
 from .communication import broadcast_float_list
 from .generation import (
         generate_tokens_probs_and_return_on_first_stage,
@@ -148,7 +149,8 @@ def generate(model,
     context_tokens_tensor, context_length_tensor = tokenize_prompts(
         prompts=prompts, tokens_to_generate=tokens_to_generate, add_BOS=add_BOS)
 
-    input_length = (context_tokens_tensor != 2).sum(dim=-1)
+    tokenizer = get_tokenizer()
+    input_length = (context_tokens_tensor != tokenizer.eos_id).sum(dim=-1)
 
     if tokens_to_generate == 0:
         return score_and_return_on_first_stage(

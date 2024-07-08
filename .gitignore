@@ -8,3 +8,7 @@ slurm*
 logs
 .vscode
 local/
+/.env/
+/.python-version
+/apex/
+/cu118-apex/

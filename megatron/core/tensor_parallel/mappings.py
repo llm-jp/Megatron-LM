@@ -133,7 +133,9 @@ def _reduce_scatter_along_first_dim(input_):
     dim_size = list(input_.size())
     assert (
         dim_size[0] % world_size == 0
-    ), "First dimension of the tensor should be divisible by tensor parallel size"
+    ), "First dimension of the tensor should be divisible by tensor parallel size, but got {} and {}".format(
+        dim_size[0], world_size
+    )
 
     dim_size[0] = dim_size[0] // world_size
 

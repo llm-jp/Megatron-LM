@@ -180,6 +180,7 @@ def generate_tokens_probs_and_return_on_first_stage(
     # Run infernece
     # =============
 
+
     with torch.no_grad():
         attention_mask, position_ids = _build_attention_mask_and_position_ids(
             tokens)

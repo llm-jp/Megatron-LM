@@ -37,7 +37,7 @@ def generate_and_post_process(model,
     move to cpu and convert to list."""
 
     # Main inference.
-    tokens, lengths, output_log_probs, logits = generate(
+    (tokens, lengths, output_log_probs, logits), input_length = generate(
         model,
         forward_step=forward_step,
         prompts=prompts,
@@ -57,8 +57,21 @@ def generate_and_post_process(model,
 
     # Only post-process on first stage.
     if mpu.is_pipeline_first_stage():
-        tokens, prompts_plus_generations, prompts_plus_generations_segments = \
-            detokenize_generations(tokens, lengths, True)
+        tmp_tokens = tokens
+        tokens = []
+        prompts_plus_generations, prompts_plus_generations_segments = [], []
+        for l, _tokens in zip(input_length, tmp_tokens):
+            _tokens = _tokens[l+1:][:tokens_to_generate]
+            _tokens = _tokens.unsqueeze(0)
+            _lengths = torch.tensor([_tokens.size(1)], dtype=torch.int64, device=_tokens.device)
+            _tokens, ppg, ppgs = detokenize_generations(_tokens, _lengths, True)
+
+            prompts_plus_generations.append(ppg[0])
+            prompts_plus_generations_segments.append(ppgs[0])
+            tokens.append(_tokens[0])
+
+        # tokens, prompts_plus_generations, prompts_plus_generations_segments = \
+        #     detokenize_generations(tokens, lengths, True)
 
         if return_output_log_probs:
             output_log_probs = output_log_probs.cpu().numpy().tolist()
@@ -135,6 +148,8 @@ def generate(model,
     context_tokens_tensor, context_length_tensor = tokenize_prompts(
         prompts=prompts, tokens_to_generate=tokens_to_generate, add_BOS=add_BOS)
 
+    input_length = (context_tokens_tensor != 2).sum(dim=-1)
+
     if tokens_to_generate == 0:
         return score_and_return_on_first_stage(
             model, context_tokens_tensor, context_length_tensor)
@@ -152,7 +167,7 @@ def generate(model,
         use_eod_token_for_early_termination=use_eod_token_for_early_termination,
         stop_on_double_eol=stop_on_double_eol,
         stop_on_eol=stop_on_eol,
-        prevent_newline_after_colon=prevent_newline_after_colon)
+        prevent_newline_after_colon=prevent_newline_after_colon), input_length
 
 def beam_search_and_post_process(model,
                                  forward_step=ForwardStep,

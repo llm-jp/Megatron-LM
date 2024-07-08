@@ -1,10 +1,11 @@
 #!/bin/bash
 set -e
 
-DEFAULT_NAME="/checkpoints/llama2-text-7b_v0.2.0"
+DEFAULT_NAME=""
 NAME="${1:-$DEFAULT_NAME}"
+echo ${NAME}
 
-DEFAULT_QUANT_CFG="int8_sq"
+DEFAULT_QUANT_CFG="fp8"
 QUANT_CFG="${2:-$DEFAULT_QUANT_CFG}"
 
 # CHANGE THE FOLLOWING IF YOU MOUNT YOUR DATA AND CHECKPOINTS DIFFERENTLY IN THE CONTAINER.
@@ -25,12 +26,12 @@ additional_options=" \
     --export-te-mcore-model \
     --calib-batch-size 8 \
     --decoder ${DECODER_TYPE} \
-    --export-dir /tmp/trtllm_ckpt \
+    --export-dir /model/kouta/model/trtllm_ckpt \
     --inference-tensor-parallel ${INFERENCE_TP} "
 
 trtllm_options=" \
-    --tensorrt-llm-checkpoint-dir /tmp/trtllm_ckpt \
-    --engine-dir /tmp/trtllm_engine \
+    --tensorrt-llm-checkpoint-dir /model/kouta/model/trtllm_ckpt \
+    --engine-dir /model/kouta/model/trtllm_engine \
     --tokenizer ${CHECKPOINT_LOAD_DIR}/hf \
     --max-input-len 2048 \
     --max-output-len 512 \
@@ -54,10 +55,10 @@ options=" \
     --no-async-tensor-model-parallel-allreduce \
     --tensor-model-parallel-size ${TP} \
     --pipeline-model-parallel-size 1 \
-    --num-layers 32 \
-    --hidden-size 4096 \
-    --ffn-hidden-size 11008 \
-    --num-attention-heads 32 \
+    --num-layers 40 \
+    --hidden-size 5120 \
+    --ffn-hidden-size 13824 \
+    --num-attention-heads 40 \
     --seq-length 4096 \
     --max-position-embeddings 4096 \
     --micro-batch-size 1 \
@@ -70,13 +71,15 @@ options=" \
     --fp16"
 
 # Precompile CUDA extentions
-python -c "import modelopt.torch.quantization.extensions as ext; print(ext.cuda_ext); print(ext.cuda_ext_fp8)"
+python3 -c "import modelopt.torch.quantization.extensions as ext; print(ext.cuda_ext); print(ext.cuda_ext_fp8)"
 
 # Acquire launch configuration where variable launch_config will be set
 launch_config="--nproc_per_node=${TP}"
+
+echo "Launch config: ${launch_config}"
 
 # Launch multi-process with torchrun
 torchrun ${launch_config} examples/inference/quantization/text_generation_ptq.py ${options} ${additional_options}
 
 # This script is using mpi4py which will fork multiple processes.
-python examples/inference/quantization/trtllm_text_generation.py ${trtllm_options}
+python3 examples/inference/quantization/trtllm_text_generation.py ${trtllm_options}

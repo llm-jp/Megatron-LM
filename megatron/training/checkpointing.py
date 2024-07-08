@@ -407,7 +407,7 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
         torch.distributed.barrier()
 
     end_misc = time()
-    logger.debug(f"rank: {torch.distributed.get_rank()}, takes {end_misc - start_misc} to finalize ckpt save ")
+    # logger.debug(f"rank: {torch.distributed.get_rank()}, takes {end_misc - start_misc} to finalize ckpt save ")
 
 def generate_state_dict(args, model, optimizer, opt_param_scheduler,
                         rng_state, use_dist_ckpt=False, iteration=None,

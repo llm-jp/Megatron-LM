@@ -6,7 +6,17 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+os.environ[
+        "TORCH_DISTRIBUTED_DEBUG"
+] = "DETAIL"
+os.environ[
+        "NCCL_DEBUG"
+] = "DEBUG"
+os.environ[
+        "NCCL_ASYNC_ERROR_HANDLING"
+] = "1"
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 import modelopt.torch.quantization as mtq
 import torch
@@ -25,6 +35,7 @@ from megatron.inference.text_generation import generate_and_post_process
 from megatron.training import get_args, get_model, initialize_megatron
 from megatron.training.checkpointing import save_checkpoint
 from megatron.training.utils import print_rank_0, unwrap_model
+from megatron.training.checkpointing import load_checkpoint
 
 QUANT_CFG_CHOICES = {
     "int8": mtq.INT8_DEFAULT_CFG,
@@ -105,7 +116,6 @@ def get_calib_dataloader(
         yield batch
 
 
-
 if __name__ == "__main__":
     initialize_megatron(
         extra_args_provider=add_text_generate_ptq_args,
@@ -133,33 +143,12 @@ if __name__ == "__main__":
 
     if args.load is not None:
         load_modelopt_checkpoint(model, strict=not args.untie_embeddings_and_output_weights)
+        # _ = load_checkpoint(model, None, None)
         print_rank_0("Done loading checkpoint")
 
     # Removing virtual pipeline parallel and other wrapper
     assert len(model) == 1, "Above condition should have caught this"
     unwrapped_model = unwrap_model(model)
-
-    if args.export_dir:
-        assert args.decoder in ["gptnext", "llama"], f"Decoder type {args.decoder} not supported."
-        Path(args.export_dir).mkdir(parents=True, exist_ok=True)
-        print_rank_0("Exporting TensorRT-LLM checkpoints.")
-
-        from modelopt.torch.export import export_tensorrt_llm_checkpoint
-
-        # In TRT LLM, squared relu activation does not support bf16. So we use fp16 by default.
-        export_tensorrt_llm_checkpoint(
-            unwrapped_model[0],
-            args.decoder,
-            torch.bfloat16 if args.bf16 else torch.float16,
-            export_dir=args.export_dir,
-            inference_tensor_parallel=args.inference_tensor_parallel,
-            inference_pipeline_parallel=1,
-            use_nfs_workspace=True,
-        )
-
-        print_rank_0(f"TensorRT-LLM checkpoints saved to {args.export_dir}")
-
-    sys.exit()
 
     all_prompts = args.prompts.split("|")
 
@@ -176,74 +165,20 @@ if __name__ == "__main__":
                     prompts=[prompt],
                     tokens_to_generate=128,
                     return_output_log_probs=True,
+                    top_k_sampling=1,
+                    add_BOS=True,
                     temperature=1.0,
                 )
-                print_rank_0(prompts_plus_generations)
+                print_rank_0(prompts_plus_generations[0])
             else:
                 generate_and_post_process(model)
-
-    def hf_dataset_forword_loop_func(model):
-        dataloader = get_calib_dataloader(args.calib_dataset, args.calib_batch_size, args.calib_size)
-        for prompts in tqdm(dataloader, total=args.calib_size//args.calib_batch_size):
-            if mpu.is_pipeline_first_stage() and mpu.get_tensor_model_parallel_rank() == 0:
-                (
-                    prompts_plus_generations,
-                    prompts_plus_generations_segments,
-                    logprobs,
-                    _,
-                ) = generate_and_post_process(
-                    model,
-                    prompts=prompts,
-                    tokens_to_generate=0,
-                    return_output_log_probs=True,
-                    temperature=1.0,
-                )
-            else:
-                generate_and_post_process(model)
-
-    ptq_forward_loop_func = custom_prompt_forward_loop_func
-    if args.calib_dataset is not None:
-        ptq_forward_loop_func = hf_dataset_forword_loop_func
 
     # Setting data parallel and tensor parallel group
     set_data_parallel_group(mpu.get_data_parallel_group())
     set_tensor_parallel_group(mpu.get_tensor_model_parallel_group())
 
-    if args.export_quant_cfg in QUANT_CFG_CHOICES:
-        mtq_config = QUANT_CFG_CHOICES[args.export_quant_cfg]
-        if "*output_layer*" not in mtq_config["quant_cfg"]:
-            mtq_config["quant_cfg"]["*output_layer*"] = {"enable": False}
-        if "awq" in args.export_quant_cfg:
-            weight_quantizer = mtq_config["quant_cfg"]["*weight_quantizer"]  # type: ignore
-            if isinstance(weight_quantizer, list):
-                weight_quantizer = weight_quantizer[0]
-            weight_quantizer["block_sizes"][-1] = 128
-        print_rank_0("Quantizing the model...")
-        mtq.quantize(unwrapped_model[0], mtq_config, ptq_forward_loop_func)
-
-    # custom_prompt_forward_loop_func(model[0])
-
     if args.save is not None and args.export_quant_cfg in QUANT_CFG_CHOICES:
         save_checkpoint(1, unwrapped_model, None, None, 0)
 
-    print_rank_0(f"Fake Quantized Model:\n {unwrapped_model[0]}")
+    custom_prompt_forward_loop_func(model[0])
 
-    if args.export_dir:
-        assert args.decoder in ["gptnext", "llama"], f"Decoder type {args.decoder} not supported."
-        Path(args.export_dir).mkdir(parents=True, exist_ok=True)
-        print_rank_0("Exporting TensorRT-LLM checkpoints.")
-
-        from modelopt.torch.export import export_tensorrt_llm_checkpoint
-
-        # In TRT LLM, squared relu activation does not support bf16. So we use fp16 by default.
-        export_tensorrt_llm_checkpoint(
-            unwrapped_model[0],
-            args.decoder,
-            torch.bfloat16 if args.bf16 else torch.float16,
-            export_dir=args.export_dir,
-            inference_tensor_parallel=args.inference_tensor_parallel,
-            inference_pipeline_parallel=1,
-            use_nfs_workspace=True,
-        )
-
-        print_rank_0(f"TensorRT-LLM checkpoints saved to {args.export_dir}")

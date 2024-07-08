@@ -5,6 +5,7 @@
 from collections.abc import Iterable
 
 import torch
+import torch.distributed
 
 from megatron.training import get_args
 from megatron.core import mpu, InferenceParams
@@ -63,6 +64,7 @@ class ForwardStep:
         only the first time the memory is allocated."""
         batch_size = tokens.size(0)
         sequence_length = tokens.size(1)
+
         if recv_buffer is None:
             recv_buffer = _allocate_recv_buffer(batch_size, sequence_length)
 
@@ -71,6 +73,7 @@ class ForwardStep:
 
         # Forward pass through the model.
         self.model.set_input_tensor(recv_buffer)
+        
         output_tensor = self._forward(tokens, position_ids, attention_mask)
 
         # Send output to the next stage.

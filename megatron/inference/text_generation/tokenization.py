@@ -16,7 +16,8 @@ def detokenize_generations(tokens_gpu_tensor,
     """Detokenize the generated tokens."""
 
     args = get_args()
-    tokenizer = get_tokenizer(args)
+    # tokenizer = get_tokenizer(args)
+    tokenizer = get_tokenizer()
     prompts_plus_generations = []
     if return_segments:
         prompts_plus_generations_segments = []
@@ -100,7 +101,7 @@ def _tokenize_prompts_and_batch(prompts, tokens_to_generate, add_BOS):
 
     # Tokenize all the prompts.
     args = get_args()
-    tokenizer = get_tokenizer(args)
+    tokenizer = get_tokenizer()
     if hasattr(tokenizer, 'eod'):
         eod_token = tokenizer.eod
     elif hasattr(tokenizer, 'eos_id'):
@@ -127,7 +128,6 @@ def _tokenize_prompts_and_batch(prompts, tokens_to_generate, add_BOS):
     for prompt_tokens, prompt_length in zip(prompts_tokens, prompts_length):
         padding_size = samples_length - prompt_length
         prompt_tokens.extend([eod_token] * padding_size)
-
     # Now we are in a structured format, we can convert to tensors.
     prompts_tokens_tensor = torch.tensor(prompts_tokens, dtype=torch.long, device='cuda')
     prompts_length_tensor = torch.tensor(prompts_length, dtype=torch.long, device='cuda')

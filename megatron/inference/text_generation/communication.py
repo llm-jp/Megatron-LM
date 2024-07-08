@@ -4,6 +4,7 @@
 
 
 import torch
+import torch.distributed
 
 from megatron.core import mpu
 
@@ -15,12 +16,16 @@ def recv_from_prev_pipeline_rank_(recv_buffer=None):
     input buffer inplace."""
     if not mpu.is_pipeline_first_stage():
         assert recv_buffer is not None
+
         recv_prev_op = torch.distributed.P2POp(
             torch.distributed.irecv, recv_buffer,
             mpu.get_pipeline_model_parallel_prev_rank())
+
         reqs = torch.distributed.batch_isend_irecv([recv_prev_op])
+
         for req in reqs:
             req.wait()
+
         # To protect against race condition when using batch_isend_irecv().
         torch.cuda.synchronize()
 
@@ -114,6 +119,7 @@ def copy_from_last_to_first_pipeline_stage(size, dtype, tensor=None):
 
     is_last_stage = mpu.is_pipeline_last_stage()
     is_first_stage = mpu.is_pipeline_first_stage()
+
     # If first stage and last state are the same, then there is no
     # pipeline parallelism and no need to communicate.
     if is_first_stage and is_last_stage:
@@ -124,6 +130,7 @@ def copy_from_last_to_first_pipeline_stage(size, dtype, tensor=None):
         is_contiguous = tensor.is_contiguous()
         src = mpu.get_pipeline_model_parallel_last_rank()
         group = mpu.get_embedding_group()
+
         if is_contiguous:
             tensor_ = tensor
         else:
@@ -135,6 +142,7 @@ def copy_from_last_to_first_pipeline_stage(size, dtype, tensor=None):
                                       device=torch.cuda.current_device())
         # Broadcast from last stage into the first stage.
         torch.distributed.broadcast(tensor_, src, group)
+        
         # Update the first stage tensor
         if is_first_stage and not is_contiguous:
             tensor[...] = tensor_

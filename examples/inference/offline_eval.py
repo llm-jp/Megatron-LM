@@ -21,6 +21,7 @@ from megatron.inference.checkpointing import load_modelopt_checkpoint
 from megatron.inference.gpt.model_provider import model_provider
 from megatron.inference.text_generation import generate_and_post_process
 from megatron.training import get_args, get_model, initialize_megatron
+
 from megatron.training.utils import print_rank_0
 
 def add_offline_eval_args(parser):

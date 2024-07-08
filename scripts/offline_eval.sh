@@ -8,7 +8,7 @@ SEQ_LENGTH=4096
 
 # distributed settings
 TENSOR_PARALLEL_SIZE=2
-PIPELINE_PARALLEL_SIZE=1
+PIPELINE_PARALLEL_SIZE=1 # メモ: Megatron側のバグで現状2以上だと動きません。
 CONTEXT_PARALLEL_SIZE=1
 DATA_PARALLEL_SIZE=1
 
@@ -91,4 +91,6 @@ torchrun ${launch_config} examples/inference/offline_eval.py \
     --log-throughput \
     --no-async-tensor-model-parallel-allreduce \
     --max-tokens-to-oom 24000 \
+    --export-legacy-megatron \
+    --export-te-mcore-model \
     ${offline_eval_options}

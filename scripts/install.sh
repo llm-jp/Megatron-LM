@@ -50,5 +50,3 @@ pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation -
 cd ../
 
 pip install "nvidia-modelopt[all]~=0.13.0" --extra-index-url https://pypi.nvidia.com --no-cache-dir
-
-bash examples/inference/quantization/ptq_trtllm_llama_7b.sh /model/kouta/model/megatron/llm-jp-13B-v3

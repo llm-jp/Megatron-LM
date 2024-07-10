@@ -1,34 +1,53 @@
-#!/bin/bash
-#$ -l rt_AF=1
-#$ -l h_rt=5:00:00
-#$ -j y
-#$ -o outputs/convert/
+#!/bin/sh
 #$ -cwd
+#$ -l node_f=1
+#$ -l h_rt=5:00:00
+#$ -o outputs/ckpt-convert/$JOB_ID.out
+#$ -e outputs/ckpt-convert/$JOB_ID.out
+#$ -p -5
+
+# Load modules
+module use /gs/fs/tga-NII-LLM/modules/modulefiles
+
+module load ylab/cuda/12.1
+module load ylab/cudnn/8.9.7
+module load ylab/nccl/cuda-12.2/2.20.5
+module load ylab/hpcx/2.17.1
+module load ninja/1.11.1
+
+source .env/bin/activate
 
 set -e
 
-# module load
-source /etc/profile.d/modules.sh
-module load cuda/11.8/11.8.0
-module load cudnn/8.9/8.9.2
-module load nccl/2.16/2.16.2-1
-module load hpcx/2.12
+# TP, PP change
+CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-2-13b/CC_v2_code20K_en40K_ja60K_ver2.2/exp-A
+CONVERTED_CHECKPOINT_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-2-13b/CC_v2_code20K_en40K_ja60K_ver2.2/exp-A-tp1-pp1
 
-# python virtualenv
-cd /bb/llm/gaf51275/llama/Megatron-LM
-source .env/bin/activate
+ITERATION=5000
+echo $ITERATION >${CHECKPOINT_DIR}/latest_checkpointed_iteration.txt
 
-# TP > 1, PP > 1の場合は、TP=1, PP=1になるように scripts/abci/change_tp_pp.sh を実行してからconvertしてください
-BASE_TENSOR_PARALLEL_SIZE=1  # fixed
-BASE_PIPELINE_PARALLEL_SIZE=1 # fixed
+TRAINING_TP=2
+TRAINING_PP=2
 
-SAVE_DIR=/bb/llm/gaf51275/llama/huggingface-checkpoint/Llama-2-7b-chat-megatron
+mkdir -p ${CONVERTED_CHECKPOINT_DIR}
+
+python tools/checkpoint/util.py \
+  --model-type GPT \
+  --loader megatron \
+  --saver megatron \
+  --megatron-path /gs/bs/tga-NII-LLM/src/Megatron-LM-mdx \
+  --target-tensor-parallel-size 1 \
+  --target-pipeline-parallel-size 1 \
+  --load-dir ${CHECKPOINT_DIR} \
+  --save-dir ${CONVERTED_CHECKPOINT_DIR}
+
+SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/hf-to-megatron/Llama-2-13b/CC_v2_code20K_en40K_ja60K_ver2.2/exp-A
 mkdir -p ${SAVE_DIR}
 
-python scripts/abci/megatron_to_hf/llama_checkpoint_conversion.py \
+python scripts/abci/megatron_to_hf/megatron_to_hf.py \
   --convert_checkpoint_from_megatron_to_transformers \
-  --load_path /bb/llm/gaf51275/llama/llama-megatron-convert-checkpoint-hf/Llama-2-7b-chat/tp${BASE_TENSOR_PARALLEL_SIZE}-pp${BASE_PIPELINE_PARALLEL_SIZE} \
+  --load_path $CONVERTED_CHECKPOINT_DIR \
   --save_path $SAVE_DIR \
-  --target_params_dtype "fp16" \
+  --target_params_dtype "bf16" \
   --print-checkpoint-structure \
-  --megatron-path /bb/llm/gaf51275/llama/Megatron-LM
+  --megatron-path /gs/bs/tga-NII-LLM/src/Megatron-LM-mdx

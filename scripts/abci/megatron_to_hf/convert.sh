@@ -41,7 +41,7 @@ python tools/checkpoint/util.py \
   --load-dir ${CHECKPOINT_DIR} \
   --save-dir ${CONVERTED_CHECKPOINT_DIR}
 
-SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/hf-to-megatron/Llama-2-13b/CC_v2_code20K_en40K_ja60K_ver2.2/exp-A
+SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/hf-to-megatron/Llama-2-13b/CC_v2_code20K_en40K_ja60K_ver2.2/exp-A/iter-${ITERATION}
 mkdir -p ${SAVE_DIR}
 
 python scripts/abci/megatron_to_hf/megatron_to_hf.py \
@@ -51,3 +51,9 @@ python scripts/abci/megatron_to_hf/megatron_to_hf.py \
   --target_params_dtype "bf16" \
   --print-checkpoint-structure \
   --megatron-path /gs/bs/tga-NII-LLM/src/Megatron-LM-mdx
+
+# tokenizer config copy
+cp /gs/bs/tga-NII-LLM/src/llm-jp-tokenizer/hf/ver2.2/code20K_en40K_ja60K.ver2.2_hf_fast.b4/* $SAVE_DIR/
+
+# change special tokens
+python /gs/bs/tga-NII-LLM/src/modelwg/convert_special_token_settings.py $SAVE_DIR/

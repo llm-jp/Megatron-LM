@@ -336,5 +336,5 @@ mpirun -np $NUM_GPUS \
   --use-mpi \
   --wandb-name ${JOB_NAME} \
   --wandb-project "geniac-13b-debug" \
-  --wandb-entity "llm-jp"
+  --wandb-entity "nii-geniac"
 

@@ -110,7 +110,7 @@ CHECKPOINT_SAVE_DIR=/lustre/checkpoints/Llama-2-13b/expa-tokenizer-v3/tp${TENSOR
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
 # data config
-DATASET_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/datasets/training_resharded_tokenize_ver3.0
+DATASET_DIR=/home/ext_kiyomaru_nii_ac_jp/training_resharded_tokenize_ver3.0
 
 TRAIN_DATA_PATH=""
 

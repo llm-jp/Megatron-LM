@@ -274,13 +274,11 @@ CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"
 # run
 mpirun -np $NUM_GPUS \
   --npernode $NUM_GPU_PER_NODE \
-  -hostfile $HOSTFILE_NAME \
   -x MASTER_ADDR=$MASTER_ADDR \
   -x MASTER_PORT=$MASTER_PORT \
   -x CUDA_DEVICE_MAX_CONNECTIONS=1 \
-  -x LD_LIBRARY_PATH \
+  -bind-to none -map-by slot \
   -x PATH \
-  -bind-to none \
   python pretrain_gpt.py \
   --tensor-model-parallel-size ${TENSOR_PARALLEL_SIZE} \
   --pipeline-model-parallel-size ${PIPELINE_PARALLEL_SIZE} \

@@ -197,7 +197,7 @@ def get_start_time_from_progress_log():
 
 
 def is_save_iteration(iteration: int):
-    """Check i we should save a checkpoint upon finishing the specified step.
+    """Check if we have to save a checkpoint upon finishing the specified step.
 
     Args:
         iteration: Training step.

@@ -196,7 +196,7 @@ def get_start_time_from_progress_log():
         start_num_floating_point_operations
 
 
-def is_save_iteration(iteration: int):
+def is_save_iteration(iteration: int) -> bool:
     """Check if we have to save a checkpoint upon finishing the specified step.
 
     Args:

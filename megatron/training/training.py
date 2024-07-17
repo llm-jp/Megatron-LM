@@ -352,7 +352,7 @@ def pretrain(train_valid_test_dataset_provider,
         print_datetime('after training is done')
 
         # NOTE(odashi): save the last checkpoint
-        if args.save and not is_save_iteration(iteration):
+        if args.save and iteration != 0 and not is_save_iteration(iteration):
             save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
                             num_floating_point_operations_so_far)
     else:

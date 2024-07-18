@@ -114,7 +114,7 @@ mkdir -p ${CHECKPOINT_SAVE_DIR}
 
 # data config
 DATASET_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/datasets/training_resharded_tokenize_ver3.0
-DATASET_V3-1_DIR=/lustre/datasets_v3.1/tokenized/tokenizer_v3b1
+DATASET_V3_1_DIR=/lustre/datasets_v3.1/tokenized/tokenizer_v3b1
 
 TRAIN_DATA_PATH=""
 
@@ -167,23 +167,23 @@ TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1329440698 ${DATASET_DIR}/train/ja/warp-html
 TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 1397268214 ${DATASET_DIR}/train/ja/warp-html-07-12_0000.jsonl_text_document"
 
 # ja warp pdf
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 30149711608 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e00_0000.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 30023232706 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e00_0001.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 30149711608 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e00_0000.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 30023232706 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e00_0001.jsonl_text_document"
 
 # ja warp pdf 0.2
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 15396388677 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0000.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 13225220331 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0001.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 12433511477 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0002.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14722870558 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0003.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14818300138 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0004.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14827819309 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0005.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 13394854115 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0006.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14369730518 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0007.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14027593174 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0008.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14719994730 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0009.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 9865165774 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0010.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14525215128 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0011.jsonl_text_document"
-TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 10835111330 ${DATASET_V3-1_DIR}/train2/ja/warp-pdf-e02_0012.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 15396388677 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0000.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 13225220331 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0001.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 12433511477 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0002.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14722870558 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0003.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14818300138 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0004.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14827819309 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0005.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 13394854115 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0006.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14369730518 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0007.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14027593174 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0008.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14719994730 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0009.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 9865165774 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0010.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 14525215128 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0011.jsonl_text_document"
+TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 10835111330 ${DATASET_V3_1_DIR}/train2/ja/warp-pdf-e02_0012.jsonl_text_document"
 
 # ja wiki
 TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 2563804308 ${DATASET_DIR}/train/ja/wiki_0000.jsonl_text_document"

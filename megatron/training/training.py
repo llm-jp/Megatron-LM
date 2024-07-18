@@ -196,6 +196,29 @@ def get_start_time_from_progress_log():
         start_num_floating_point_operations
 
 
+def is_save_iteration(iteration: int) -> bool:
+    """Check if we have to save a checkpoint upon finishing the specified step.
+
+    Args:
+        iteration: Training step.
+
+    Returns:
+        True if we should save checkpoint, False otherwise.
+    """
+    if iteration < 10:
+        # 0, 1, ..., 9
+        return True
+    if iteration < 100:
+        # 10, 20, ..., 90
+        return iteration % 10 == 0
+    if iteration < 1000:
+        # 100, 200, ..., 900
+        return iteration % 100 == 0
+
+    # 1000, 2000, ..., last
+    return iteration % 1000 == 0
+
+
 def pretrain(train_valid_test_dataset_provider,
              model_provider,
              model_type,
@@ -313,6 +336,12 @@ def pretrain(train_valid_test_dataset_provider,
             print_rank_0("retro cyclic train iters : %d" % args.train_iters)
 
         iteration = 0
+
+        # NOTE(odashi): we also save the initial checkpoint
+        if args.save:
+            save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
+                            args.num_floating_point_operations_so_far)
+
         if args.do_train and args.train_iters > 0:
             iteration, num_floating_point_operations_so_far = train(
                 forward_step_func,
@@ -322,7 +351,8 @@ def pretrain(train_valid_test_dataset_provider,
 
         print_datetime('after training is done')
 
-        if args.save and iteration != 0 and iteration % args.save_interval != 0:
+        # NOTE(odashi): save the last checkpoint
+        if args.save and iteration != 0 and not is_save_iteration(iteration):
             save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
                             num_floating_point_operations_so_far)
     else:
@@ -1280,9 +1310,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         dynamic_checkpoint_flag = get_global_dynamic_checkpoint()
 
-        if args.save and args.save_interval and (
-            iteration % args.save_interval == 0 or dynamic_checkpoint_flag
-        ):
+        if args.save and (is_save_iteration(iteration) or dynamic_checkpoint_flag):
             timers('interval-time').stop()
             save_checkpoint_and_time(iteration, model, optimizer,
                                      opt_param_scheduler,

@@ -390,8 +390,12 @@ def validate_args(args, defaults={}):
         assert args.max_position_embeddings >= args.decoder_seq_length
     if args.lr is not None:
         assert args.min_lr <= args.lr
-    if args.save is not None:
-        assert args.save_interval is not None
+
+    # NOTE(odashi): Checkpointing schedule is implemented in training.py.
+    #if args.save is not None:
+    #    assert args.save_interval is not None
+    assert args.save_interval is None  # prevent meaningless argument
+
     # Mixed precision checks.
     if args.fp16_lm_cross_entropy:
         assert args.fp16, 'lm cross entropy in fp16 only support in fp16 mode.'

@@ -340,7 +340,7 @@ def pretrain(train_valid_test_dataset_provider,
         # NOTE(odashi): we also save the initial checkpoint
         if args.save:
             save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
-                            num_floating_point_operations_so_far)
+                            args.num_floating_point_operations_so_far)
 
         if args.do_train and args.train_iters > 0:
             iteration, num_floating_point_operations_so_far = train(

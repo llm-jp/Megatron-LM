@@ -100,6 +100,8 @@ MIN_LR=2e-5
 WEIGHT_DECAY=0.1
 GRAD_CLIP=1
 
+# total number of iterations
+# 2072488058295 (number of tokens) / 4096 (seq len) / 1024 (batch size) = 494119.65806365 -> 494120
 LR_WARMUP_STEPS=2000
 LR_DECAY_ITERS=492120
 TRAIN_STEPS=$((${LR_WARMUP_STEPS} + ${LR_DECAY_ITERS}))

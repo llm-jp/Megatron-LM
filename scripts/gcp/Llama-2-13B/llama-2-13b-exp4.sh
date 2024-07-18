@@ -305,7 +305,9 @@ mpirun -np $NUM_GPUS \
   --tokenizer-model ${TOKENIZER_MODEL} \
   ${CHECKPOINT_ARGS} \
   --save ${CHECKPOINT_SAVE_DIR} \
-  --train-data-path ${TRAIN_DATA_PATH} \
+  --data-path ${TRAIN_DATA_PATH} \
+  --split 1000,0,0 \
+  --data-cache-path /home/ext_nakayama_nii_ac_jp/src/Megatron-LM/data/cache \
   --distributed-backend nccl \
   --init-method-std 0.02 \
   --lr ${LR} \
@@ -320,7 +322,7 @@ mpirun -np $NUM_GPUS \
   --adam-beta2 0.95 \
   --adam-eps 1e-8 \
   --log-interval 1 \
-  --eval-interval 0 \
+  --eval-interval ${TRAIN_STEPS} \
   --eval-iters 0 \
   --bf16 \
   --untie-embeddings-and-output-weights \

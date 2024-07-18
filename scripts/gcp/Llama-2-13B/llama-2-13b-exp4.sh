@@ -266,7 +266,7 @@ TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 840277331 ${DATASET_DIR}/train/zh/wiki_0000.
 TRAIN_DATA_PATH="${TRAIN_DATA_PATH} 316296219 ${DATASET_DIR}/train/ko/wiki_0000.jsonl_text_document"
 
 # validation set
-VALID_DATA_PATH="" # TODO
+VALID_DATA_PATH="" # Skip validation
 
 
 # job name
@@ -304,7 +304,6 @@ mpirun -np $NUM_GPUS \
   ${CHECKPOINT_ARGS} \
   --save ${CHECKPOINT_SAVE_DIR} \
   --train-data-path ${TRAIN_DATA_PATH} \
-  --valid-data-path ${VALID_DATA_PATH} \
   --distributed-backend nccl \
   --init-method-std 0.02 \
   --lr ${LR} \
@@ -319,8 +318,8 @@ mpirun -np $NUM_GPUS \
   --adam-beta2 0.95 \
   --adam-eps 1e-8 \
   --log-interval 1 \
-  --eval-interval 1000 \
-  --eval-iters 10 \
+  --eval-interval 0 \
+  --eval-iters 0 \
   --bf16 \
   --untie-embeddings-and-output-weights \
   --position-embedding-type rope \

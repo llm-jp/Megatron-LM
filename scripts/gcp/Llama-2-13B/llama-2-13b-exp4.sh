@@ -19,7 +19,7 @@ module load hpcx/2.17.1
 ulimit -n 65536 1048576
 
 # python virtualenv
-source venv/bin/activate
+source /home/ext_kazuki_fujii_rio_gsic_titech/src/Megatron-LM/.env/bin/activate
 
 # Important TCPX environment variables
 UDS_PATH="/run/tcpx-${SLURM_JOB_ID}"

@@ -9,16 +9,16 @@
 set -e
 
 # module load
-module use /gs/bs/tga-bayes-crest/fujii/modulefiles
+module use /gs/fs/tga-NII-LLM/modules/modulefiles
 
 module load ylab/cuda/12.1
 module load ylab/cudnn/8.9.7
-module load ylab/nccl/cuda-12.1/2.18.3
+module load ylab/nccl/cuda-12.2/2.20.5
 module load ylab/hpcx/2.17.1
 module load ninja/1.11.1
 
 # python virtualenv
-source venv/bin/activate
+source .env/bin/activate
 
 # distributed settings
 export MASTER_ADDR=$(/usr/sbin/ip a show dev bond0 | grep 'inet ' | awk '{ print $2 }' | cut -d "/" -f 1)
@@ -51,7 +51,6 @@ SEQ_LENGTH=4096
 # distributed settings
 TENSOR_PARALLEL_SIZE=1   # fixed
 PIPELINE_PARALLEL_SIZE=1  # num layers 24
-CONTEXT_PARALLEL_SIZE=1
 DATA_PARALLEL_SIZE=$((${NUM_GPUS} / (${TENSOR_PARALLEL_SIZE} * ${PIPELINE_PARALLEL_SIZE})))
 
 # training config
@@ -68,7 +67,7 @@ GRAD_CLIP=1
 
 # model config
 TOKENIZER_MODEL=/gs/fs/tga-bayes-crest/taishi/workspace/llm-jp-tokenizer/models/ver2.2/code10K_en20K_ja30K.ver2.2.model
-CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-2-1.56b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}-LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}-WARMUP${LR_WARMUP_STEPS}
+CHECKPOINT_SAVE_DIR=/gs/bs/tgh-NII-LLM/checkpoints/Llama-2-1.56b/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-LR${LR}-MINLR${MIN_LR}-WD${WEIGHT_DECAY}-WARMUP${LR_WARMUP_STEPS}
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -238,7 +237,6 @@ mpirun -np $NUM_GPUS \
   python pretrain_gpt.py \
   --tensor-model-parallel-size ${TENSOR_PARALLEL_SIZE} \
   --pipeline-model-parallel-size ${PIPELINE_PARALLEL_SIZE} \
-  --context-parallel-size ${CONTEXT_PARALLEL_SIZE} \
   --sequence-parallel \
   --use-distributed-optimizer \
   --num-layers ${NUM_LAYERS} \

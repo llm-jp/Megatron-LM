@@ -297,6 +297,9 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
             print(f"rank={torch_distributed.get_rank()} failed to create directory for distributed optimizer checkpoint: {e}")
             exit(1)
 
+        # NOTE(odashi):
+        # We don't save the initial optimizer state since all the values are predictable
+        # and the inner structure of the object is not initialized at this moment.
         if iteration != 0:
             optimizer.save_parameter_state(optim_checkpoint_name)
 

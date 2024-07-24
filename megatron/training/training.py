@@ -337,11 +337,6 @@ def pretrain(train_valid_test_dataset_provider,
 
         iteration = 0
 
-        # NOTE(odashi): we also save the initial checkpoint
-        if args.save:
-            save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
-                            args.num_floating_point_operations_so_far)
-
         if args.do_train and args.train_iters > 0:
             iteration, num_floating_point_operations_so_far = train(
                 forward_step_func,
@@ -1068,6 +1063,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         })
 
     num_floating_point_operations_so_far = args.num_floating_point_operations_so_far
+
+    # NOTE(odashi): we also save the initial checkpoint
+    if args.save and iteration == 0:
+        save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler,
+                                 num_floating_point_operations_so_far)
 
     # Setup some training config params
     config.grad_scale_func = optimizer.scale_loss

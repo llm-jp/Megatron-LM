@@ -76,8 +76,8 @@ CHECKPOINT_SAVE_DIR=/lustre/llama-2-13b-exp4/tp${TENSOR_PARALLEL_SIZE}-pp${PIPEL
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
 # data config
-DATASET_DIR=/home/ext_kazuki_fujii_rio_gsic_titech/datasets/training_resharded_tokenize_ver3.0
-DATASET_V3_1_DIR=/lustre/datasets_v3.1/tokenized/tokenizer_v3b1
+DATASET_DIR=/data/llm-jp-corpus/v3.0.0/training_resharded_tokenize_ver3.0
+DATASET_V3_1_DIR=/data/llm-jp-corpus/v3.1.0/tokenize/v3.0b1
 
 TRAIN_DATA_PATH=""
 

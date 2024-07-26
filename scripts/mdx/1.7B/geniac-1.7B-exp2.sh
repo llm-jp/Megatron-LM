@@ -5,8 +5,8 @@
 #SBATCH --nodes 16
 #SBATCH --gpus-per-node=8
 #SBATCH --ntasks-per-node=8
-#SBATCH --output=outputs/llama-2-1.7b-exp2/%x-%j.out
-#SBATCH --error=outputs/llama-2-1.7b-exp2/%x-%j.out
+#SBATCH --output=outputs/llama-2-1.7b-exp2/%j.out
+#SBATCH --error=outputs/llama-2-1.7b-exp2/%j.out
 
 set -e
 
@@ -25,7 +25,7 @@ echo "MASTER_ADDR=${MASTER_ADDR}"
 NODE_TYPE="a100"
 export NUM_GPU_PER_NODE=8
 
-NUM_NODES=8
+NUM_NODES=$SLURM_JOB_NUM_NODES
 NUM_GPUS=$((${NUM_NODES} * ${NUM_GPU_PER_NODE}))
 
 export LOGLEVEL=INFO
@@ -263,8 +263,9 @@ CHECKPOINT_ARGS="--load ${CHECKPOINT_SAVE_DIR}"
   --tokenizer-model ${TOKENIZER_MODEL} \
   ${CHECKPOINT_ARGS} \
   --save ${CHECKPOINT_SAVE_DIR} \
-  --data-path ${DATA_PATH} \
+  --data-path ${TRAIN_DATA_PATH} \
   --split 1000,0,0 \
+  --data-cache-path /model/llmjp0/nii-geniac-megatron/Megatron-LM/data/cache \
   --distributed-backend nccl \
   --init-method-std 0.02 \
   --lr ${LR} \

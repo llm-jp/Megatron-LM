@@ -235,7 +235,7 @@ VALID_DATA_PATH="" # Skip validation
 
 
 # job name
-JOB_NAME="llama-2-13b-exp4"
+JOB_NAME="llama-2-13b-exp4-sakura"
 
 # --norm-epsilon 1e-5 : conifg.json (RMS norm)
 

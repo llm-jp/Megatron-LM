@@ -18,9 +18,6 @@ module load nccl/2.20.5
 # open file limit
 ulimit -n 65536 1048576
 
-# python virtualenv
-source /home/ext_kazuki_fujii_rio_gsic_titech/src/Megatron-LM/.env/bin/activate
-
 # The following two can be useful for debugging
 # export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_SUBSYS=INIT,GRAPH,ENV,TUNING
@@ -71,7 +68,7 @@ TRAIN_STEPS=$((${LR_WARMUP_STEPS} + ${LR_DECAY_ITERS}))
 
 # model config
 TOKENIZER_MODEL=/data/tokenizer/llm-jp-tokenizer-100k.ver3.0b1.model
-CHECKPOINT_SAVE_DIR=/data/llama-2-13b-exp4/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}
+CHECKPOINT_SAVE_DIR=/data/checkpoints_13b_exp4/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 

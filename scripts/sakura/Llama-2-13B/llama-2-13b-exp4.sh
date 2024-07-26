@@ -70,8 +70,8 @@ LR_DECAY_ITERS=492120
 TRAIN_STEPS=$((${LR_WARMUP_STEPS} + ${LR_DECAY_ITERS}))
 
 # model config
-TOKENIZER_MODEL=/home/ext_kazuki_fujii_rio_gsic_titech/llm-jp-tokenizer/models/ver3.0/llm-jp-tokenizer-100k.ver3.0b1.model
-CHECKPOINT_SAVE_DIR=/lustre/llama-2-13b-exp4/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}
+TOKENIZER_MODEL=/data/tokenizer/llm-jp-tokenizer-100k.ver3.0b1.model
+CHECKPOINT_SAVE_DIR=/data/llama-2-13b-exp4/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 
@@ -270,7 +270,7 @@ mpirun -np $NUM_GPUS \
   --save ${CHECKPOINT_SAVE_DIR} \
   --data-path ${TRAIN_DATA_PATH} \
   --split 1000,0,0 \
-  --data-cache-path /home/ext_nakayama_nii_ac_jp/src/Megatron-LM/data/cache \
+  --data-cache-path /data/Megatron-LM_data-cache \
   --distributed-backend nccl \
   --init-method-std 0.02 \
   --lr ${LR} \

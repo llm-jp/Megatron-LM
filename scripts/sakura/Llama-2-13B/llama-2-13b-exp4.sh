@@ -68,7 +68,7 @@ TRAIN_STEPS=$((${LR_WARMUP_STEPS} + ${LR_DECAY_ITERS}))
 
 # model config
 TOKENIZER_MODEL=/data/tokenizer/llm-jp-tokenizer-100k.ver3.0b1.model
-CHECKPOINT_SAVE_DIR=/data/checkpoints_13b_exp4/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}
+CHECKPOINT_SAVE_DIR=/data/experiments/1/checkpoints_v3_13b_exp4/tp${TENSOR_PARALLEL_SIZE}-pp${PIPELINE_PARALLEL_SIZE}-ct${CONTEXT_PARALLEL_SIZE}
 
 mkdir -p ${CHECKPOINT_SAVE_DIR}
 

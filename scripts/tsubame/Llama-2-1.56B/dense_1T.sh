@@ -297,4 +297,4 @@ mpirun -np $NUM_GPUS \
   --log-throughput \
   --wandb-name ${JOB_NAME} \
   --wandb-project "TSUBAME4-Llama-2-1.56b" \
-  --wandb-entity "prj-jalm"
+  --wandb-entity "llm-jp"

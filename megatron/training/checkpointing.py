@@ -195,7 +195,7 @@ def checkpoint_exists(checkpoints_path):
 def read_metadata(tracker_filename):
     # Read the tracker file and either set the iteration or
     # mark it as a release checkpoint.
-    iteration = 0
+    iteration = -1
     release = False
     with open(tracker_filename, 'r') as f:
         metastring = f.read().strip()

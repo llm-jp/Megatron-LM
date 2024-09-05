@@ -1150,7 +1150,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 'validation_iterations_time_msecs_avg': validation_iterations_time_msecs_avg
             })
 
-    while iteration < args.train_iters:
+    while iteration < args.train_iters and (args.force_stop_iter is None or iteration < args.force_stop_iter):
         if (
             # train_data_iterator is not None
             args.skip_train_iteration_range is not None

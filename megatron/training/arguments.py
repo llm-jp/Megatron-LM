@@ -1688,5 +1688,7 @@ def _add_experimental_args(parser):
                        '`transformer_block.py`, or `transformer_layer.py`')
     group.add_argument('--yaml-cfg', type=str, default=None,
                        help = 'Config file to add additional arguments')
+    group.add_argument('--force-stop-iter', type=int, default=None,
+                       help="Stop training process at this iteration regardless of any other configs.")
 
     return parser

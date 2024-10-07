@@ -107,7 +107,7 @@ class BlendedDataset(torch.utils.data.Dataset):
             dataset_name=''
             if args.data_path == None:
                 dataset_name = args.train_data_path[2*dataset_id+1]
-            temp_dict={'iteration':int(iteration),'dataset_idx':int(dataset_id),'dataset_name':dataset_name,'text':output_text,'token_ids':token_ids}
+            temp_dict={'iteration':int(iteration),'dataset_idx':int(dataset_id),'dataset_name':dataset_name,'doc_ids':list(map(lambda n: int(n), d['doc_ids'])),'text':output_text,'token_ids':token_ids}
             f.write(json.dumps(temp_dict, ensure_ascii=False)+'\n')
 
         return {

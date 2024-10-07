@@ -244,7 +244,7 @@ class GPTDataset(MegatronDataset):
         Returns:
             Dict[str, torch.Tensor]: The text ids wrapped in a dictionary
         """
-        text, _ = self._query_document_sample_shuffle_indices(idx)
+        text, doc_ids = self._query_document_sample_shuffle_indices(idx)
 
         text = torch.from_numpy(text).long()
         labels = text[1:].contiguous()
@@ -283,6 +283,7 @@ class GPTDataset(MegatronDataset):
                 "attention_mask": attention_mask,
                 "loss_mask": loss_mask,
                 "position_ids": position_ids,
+                'doc_ids': doc_ids,
             }
         else:
             return {
@@ -290,6 +291,7 @@ class GPTDataset(MegatronDataset):
                 "labels": labels,
                 "loss_mask": loss_mask,
                 "position_ids": position_ids,
+                'doc_ids':doc_ids
             }
 
     def _query_document_sample_shuffle_indices(

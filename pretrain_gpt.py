@@ -119,6 +119,7 @@ def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor):
         output_tensor (torch.Tensor): The tensor with the losses
     """
     args = get_args()
+    return torch.tensor(0.0,device=args.local_rank),torch.tensor(0.0,device=args.local_rank)
 
     losses = output_tensor.float()
     loss_mask = loss_mask.view(-1).float()
@@ -162,8 +163,9 @@ def forward_step(data_iterator, model: GPTModel):
     timers('batch-generator').stop()
 
     with stimer:
-        output_tensor = model(tokens, position_ids, attention_mask,
-                              labels=labels)
+        output_tensor = torch.zeros([2048, 1, 5120],device=args.local_rank)
+        # output_tensor = model(tokens, position_ids, attention_mask,
+        #                       labels=labels)
 
     return output_tensor, partial(loss_func, loss_mask)
 

@@ -14,6 +14,8 @@ import torch
 from megatron.core.datasets.blended_megatron_dataset_config import BlendedMegatronDatasetConfig
 from megatron.core.datasets.megatron_dataset import MegatronDataset
 from megatron.core.datasets.utils import log_single_rank, normalize
+from megatron.training import get_args
+from megatron.training.tokenizer.tokenizer import build_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -78,19 +80,36 @@ class BlendedDataset(torch.utils.data.Dataset):
         self.dataset_index, self.dataset_sample_index = self._build_indices()
 
         # Check size
-        _ = self[self.size - 1]
-        try:
-            _ = self[self.size]
-            raise RuntimeError(f"{type(self).__name__} size is improperly bounded")
-        except IndexError:
-            log_single_rank(logger, logging.INFO, f"> {type(self).__name__} length: {len(self)}")
+        # _ = self[self.size - 1]
+        # try:
+        #     _ = self[self.size]
+        #     raise RuntimeError(f"{type(self).__name__} size is improperly bounded")
+        # except IndexError:
+        #     log_single_rank(logger, logging.INFO, f"> {type(self).__name__} length: {len(self)}")
+        self.tokenizer = build_tokenizer(get_args())
 
     def __len__(self) -> int:
         return self.size
 
     def __getitem__(self, idx: int) -> Dict[str, Union[int, numpy.ndarray]]:
+        args = get_args()
+        global_batch_size = args.global_batch_size
+        iteration = idx // global_batch_size
+
         dataset_id = self.dataset_index[idx]
         dataset_sample_id = self.dataset_sample_index[idx]
+        d = self.datasets[dataset_id][dataset_sample_id]
+        used_data_out_path = args.used_data_out_path
+        os.makedirs(used_data_out_path, exist_ok=True)
+        with open(f'{used_data_out_path}/used_data_{args.rank}.jsonl','a',encoding='utf-8')as f:
+            token_ids = list(map(lambda n: int(n), d['tokens']))
+            output_text = self.tokenizer.detokenize(token_ids)
+            dataset_name=''
+            if args.data_path == None:
+                dataset_name = args.train_data_path[2*dataset_id+1]
+            temp_dict={'iteration':int(iteration),'dataset_idx':int(dataset_id),'dataset_name':dataset_name,'text':output_text,'token_ids':token_ids}
+            f.write(json.dumps(temp_dict, ensure_ascii=False)+'\n')
+
         return {
             "dataset_id": dataset_id,
             **self.datasets[dataset_id][dataset_sample_id],

@@ -43,6 +43,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = _add_transformer_engine_args(parser)
     parser = _add_retro_args(parser)
     parser = _add_experimental_args(parser)
+    parser.add_argument("--used_data_out_path", type=str, required=True)
 
     # Custom arguments.
     if extra_args_provider is not None:

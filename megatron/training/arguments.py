@@ -1690,5 +1690,8 @@ def _add_experimental_args(parser):
                        help = 'Config file to add additional arguments')
     group.add_argument('--force-stop-iter', type=int, default=None,
                        help="Stop training process at this iteration regardless of any other configs.")
+    group.add_argument('--save-iter-patterns', type=str, default=None, nargs='*',
+                       help='List of regex patterns of step numbers (non-0-padding integer) to save checkpoint. '
+                       'E.g., "123.." will save all checkpoints between 12300 and 12399.')
 
     return parser

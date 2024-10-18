@@ -109,11 +109,8 @@ class BlendedDataset(torch.utils.data.Dataset):
                 dataset_name = args.train_data_path[2*dataset_id+1]
             temp_dict={'iteration':int(iteration),'dataset_idx':int(dataset_id),'dataset_name':dataset_name,'doc_ids':list(map(lambda n: int(n), d['doc_ids'])),'text':output_text,'token_ids':token_ids}
             f.write(json.dumps(temp_dict, ensure_ascii=False)+'\n')
-
-        return {
-            "dataset_id": dataset_id,
-            **self.datasets[dataset_id][dataset_sample_id],
-        }
+        del d["doc_ids"]  # Remove the doc_ids from the output as it is not used in the forward pass
+        return {"dataset_id": dataset_id, **d}
 
     def _build_indices(self) -> Tuple[numpy.ndarray, numpy.ndarray]:
         """Build and optionally cache the dataset index and the dataset sample index

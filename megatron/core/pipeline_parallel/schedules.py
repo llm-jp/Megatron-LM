@@ -365,6 +365,7 @@ def forward_backward_no_pipelining(
 
     forward_data_store = []
     input_tensor, output_tensor_grad = None, None
+    input_tensor = torch.tensor(0)
     with no_sync_func():
         for i in range(num_microbatches - 1):
             output_tensor = forward_step(
@@ -379,8 +380,8 @@ def forward_backward_no_pipelining(
                 is_first_microbatch=check_first_val_step(first_val_step, forward_only, i == 0),
                 current_microbatch=i,
             )
-            if not forward_only:
-                backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config)
+            # if not forward_only:
+            #     backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config)
 
     # Run computation for last microbatch out of context handler (want to
     # synchronize gradients).
@@ -399,8 +400,8 @@ def forward_backward_no_pipelining(
         current_microbatch=num_microbatches - 1,
     )
 
-    if not forward_only:
-        backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config)
+    # if not forward_only:
+    #     backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config)
 
     if config.timers is not None:
         config.timers('forward-backward').stop()

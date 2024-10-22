@@ -15,7 +15,6 @@ from megatron.core.datasets.blended_megatron_dataset_config import BlendedMegatr
 from megatron.core.datasets.megatron_dataset import MegatronDataset
 from megatron.core.datasets.utils import log_single_rank, normalize
 from megatron.training import get_args
-from megatron.training.tokenizer.tokenizer import build_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +85,6 @@ class BlendedDataset(torch.utils.data.Dataset):
         #     raise RuntimeError(f"{type(self).__name__} size is improperly bounded")
         # except IndexError:
         #     log_single_rank(logger, logging.INFO, f"> {type(self).__name__} length: {len(self)}")
-        self.tokenizer = build_tokenizer(get_args())
 
     def __len__(self) -> int:
         return self.size
@@ -103,14 +101,17 @@ class BlendedDataset(torch.utils.data.Dataset):
             # `iteration` can exceed train_iters due to the prefetching of the next batch
             used_data_out_path = args.used_data_out_path
             os.makedirs(used_data_out_path, exist_ok=True)
-            with open(f'{used_data_out_path}/used_data_{args.rank}.jsonl','a',encoding='utf-8')as f:
-                token_ids = list(map(lambda n: int(n), d['tokens']))
-                output_text = self.tokenizer.detokenize(token_ids)
-                dataset_name=''
-                if args.data_path == None:
-                    dataset_name = args.train_data_path[2*dataset_id+1]
-                temp_dict={'iteration':int(iteration),'dataset_idx':int(dataset_id),'dataset_name':dataset_name,'doc_ids':list(map(lambda n: int(n), d['doc_ids'])),'text':output_text,'token_ids':token_ids}
-                f.write(json.dumps(temp_dict, ensure_ascii=False)+'\n')
+            used_data_out_path_rank = os.path.join(used_data_out_path, f"used_data_{args.rank}.jsonl")
+            with open(used_data_out_path_rank, "a", encoding="utf-8") as f:
+                dataset_name = args.data_path[2 * dataset_id + 1]  # weight, path, weight, path, ...
+                row = {
+                    "iteration": iteration,
+                    "dataset_idx": int(dataset_id),
+                    "dataset_name": dataset_name,
+                    "doc_ids": list(map(int, d["doc_ids"])),
+                    "token_ids": list(map(int, d["tokens"])),
+                }
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
         del d["doc_ids"]  # Remove the doc_ids from the output as it is not used in the forward pass
         return {"dataset_id": dataset_id, **d}
 

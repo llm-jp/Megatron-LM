@@ -86,6 +86,12 @@ class BlendedDataset(torch.utils.data.Dataset):
         # except IndexError:
         #     log_single_rank(logger, logging.INFO, f"> {type(self).__name__} length: {len(self)}")
 
+        args = get_args()
+        used_data_out_path = args.used_data_out_path
+        os.makedirs(used_data_out_path, exist_ok=True)
+        used_data_out_path_rank = os.path.join(used_data_out_path, f"used_data_{args.rank}.jsonl")
+        self.used_data_file = open(used_data_out_path_rank, "w", encoding="utf-8")
+
     def __len__(self) -> int:
         return self.size
 
@@ -99,19 +105,15 @@ class BlendedDataset(torch.utils.data.Dataset):
         d = self.datasets[dataset_id][dataset_sample_id]
         if iteration < args.train_iters:
             # `iteration` can exceed train_iters due to the prefetching of the next batch
-            used_data_out_path = args.used_data_out_path
-            os.makedirs(used_data_out_path, exist_ok=True)
-            used_data_out_path_rank = os.path.join(used_data_out_path, f"used_data_{args.rank}.jsonl")
-            with open(used_data_out_path_rank, "a", encoding="utf-8") as f:
-                dataset_name = args.data_path[2 * dataset_id + 1]  # weight, path, weight, path, ...
-                row = {
-                    "iteration": iteration,
-                    "dataset_idx": int(dataset_id),
-                    "dataset_name": dataset_name,
-                    "doc_ids": list(map(int, d["doc_ids"])),
-                    "token_ids": list(map(int, d["tokens"])),
-                }
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            dataset_name = args.data_path[2 * dataset_id + 1]  # weight, path, weight, path, ...
+            row = {
+                "iteration": iteration,
+                "dataset_idx": int(dataset_id),
+                "dataset_name": dataset_name,
+                "doc_ids": list(map(int, d["doc_ids"])),
+                "token_ids": list(map(int, d["tokens"])),
+            }
+            self.used_data_file.write(json.dumps(row, ensure_ascii=False) + "\n")
         del d["doc_ids"]  # Remove the doc_ids from the output as it is not used in the forward pass
         return {"dataset_id": dataset_id, **d}
 

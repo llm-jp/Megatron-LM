@@ -33,3 +33,6 @@ safetensors
 
 # transformer
 einops
+
+# training data dumping
+orjsonl

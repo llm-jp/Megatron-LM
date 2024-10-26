@@ -796,7 +796,7 @@ def train_step(forward_step_func, data_iterator,
 
 def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_rate, iteration,
                  loss_scale, report_memory_flag, skipped_iter,
-                 grad_norm, params_norm, num_zeros_in_grad):
+                 grad_norm, params_norm, num_zeros_in_grad, optimizer):
     """Log training information such as losses, timing, ...."""
     args = get_args()
     timers = get_timers()
@@ -957,6 +957,25 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
 
     wandb_stats: dict[str, typing.Any] = {}
 
+    opt_stats = [0.0] * 8
+    opt_stats_2 = [0.0] * 4
+    if optimizer is not None:
+        """logging optimizer states"""
+        for _, param_group in enumerate(optimizer.param_groups):
+            for _, param in enumerate(param_group["params"]):
+                opt_stats[0] += (torch.norm(optimizer.state[param]['exp_avg_sq']).item())**2
+                opt_stats[1] += (torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt()).item())**2
+                opt_stats[2] += (torch.norm(optimizer.state[param]['exp_avg']).item())**2
+                opt_stats[3] += (torch.norm(param).item())**2
+                opt_stats[4] += torch.norm(optimizer.state[param]['exp_avg_sq'], p=1).item()
+                opt_stats[5] += torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt(), p=1).item()
+                opt_stats[6] += torch.norm(optimizer.state[param]['exp_avg'], p=1).item()
+                opt_stats[7] += torch.norm(param, p=1).item()
+                opt_stats_2[0] = max(opt_stats_2[0], abs(optimizer.state[param]['exp_avg_sq'].max().item()), abs(optimizer.state[param]['exp_avg_sq'].min().item()))
+                opt_stats_2[1] = max(opt_stats_2[1], optimizer.state[param]['exp_avg_sq'].sqrt().abs_().max().item())
+                opt_stats_2[2] = max(opt_stats_2[2], abs(optimizer.state[param]['exp_avg'].max().item()), abs(optimizer.state[param]['exp_avg'].min().item()))
+                opt_stats_2[3] = max(opt_stats_2[3], abs(param.max().item()), abs(param.min().item()))
+
     if wandb_writer and (iteration % args.tensorboard_log_interval == 0) and is_last_rank():
         wandb_stats["utils/steps-vs-samples"] = args.consumed_train_samples
 
@@ -971,6 +990,20 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         wandb_stats["others/grad-norm"] = grad_norm
         if hasattr(args, 'seq_length'):
             wandb_stats["others/seq_length"] = args.seq_length
+
+        if optimizer is not None:
+            wandb_stats['optimizer/variance_l2'] = opt_stats[0]**0.5
+            wandb_stats['optimizer/variance_sqrt_l2'] = opt_stats[1]**0.5
+            wandb_stats['optimizer/momentum_l2'] = opt_stats[2]**0.5
+            wandb_stats['optimizer/weight_l2'] = opt_stats[3]**0.5
+            wandb_stats['optimizer/variance_l1'] = opt_stats[4]
+            wandb_stats['optimizer/variance_sqrt_l1'] = opt_stats[5]
+            wandb_stats['optimizer/momentum_l1'] = opt_stats[6]
+            wandb_stats['optimizer/weight_l1'] = opt_stats[7]
+            wandb_stats['optimizer/variance_abs_max'] = opt_stats_2[0]
+            wandb_stats['optimizer/variance_sqrt_abs_max'] = opt_stats_2[1]
+            wandb_stats['optimizer/momentum_abs_max'] = opt_stats_2[2]
+            wandb_stats['optimizer/weight_abs_max'] = opt_stats_2[3]
 
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed(barrier=True)
@@ -1331,7 +1364,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                           decoupled_learning_rate,
                                           iteration, loss_scale,
                                           report_memory_flag, skipped_iter,
-                                          grad_norm, params_norm, num_zeros_in_grad)
+                                          grad_norm, params_norm, num_zeros_in_grad, optimizer)
 
         # StragglerDetector
         if iteration % args.log_interval == 0 and args.log_straggler:

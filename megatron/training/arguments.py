@@ -72,8 +72,19 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
 
 
     # Args from environment
+    # Distributed args.
+    if args.use_mpi:
+        global_rank = int(os.getenv('OMPI_COMM_WORLD_RANK', 0))
+        local_rank = int(os.getenv('OMPI_COMM_WORLD_LOCAL_RANK', 0))
+        world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE', 1))
+
+        os.environ['RANK'] = str(global_rank)
+        os.environ['LOCAL_RANK'] = str(local_rank)
+        os.environ['WORLD_SIZE'] = str(world_size)
+
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
+    args.local_rank = int(os.getenv('LOCAL_RANK', '0'))
 
     return args
 
@@ -1014,6 +1025,7 @@ def _add_logging_args(parser):
                        help='The wandb experiment name.')
     group.add_argument('--wandb-save-dir', type=str, default='',
                        help='Path to save the wandb results locally.')
+    group.add_argument("--use-mpi", action="store_true", default=False)
     group.add_argument('--logging-level', type=int, default=None,
                        help='Set default logging level')
     return parser

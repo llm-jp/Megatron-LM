@@ -953,6 +953,25 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         moe_loss_scale = 1 / get_num_microbatches()
         track_moe_metrics(moe_loss_scale, iteration, writer, wandb_writer, total_loss_dict, args.moe_per_layer_logging)
 
+    import typing
+
+    wandb_stats: dict[str, typing.Any] = {}
+
+    if wandb_writer and (iteration % args.tensorboard_log_interval == 0) and is_last_rank():
+        wandb_stats["utils/steps-vs-samples"] = args.consumed_train_samples
+
+        wandb_stats["utils/learning-rate"] = learning_rate
+        wandb_stats["utils/batch-size"] = batch_size
+
+        for key in loss_dict:
+            wandb_stats[f"lm-loss-training/{key}"] = loss_dict[key]
+            wandb_stats[f"lm-loss-training/{key}_ppl"] = math.exp(total_loss_dict[key].item())
+
+        wandb_stats["others/loss-scale"] = loss_scale
+        wandb_stats["others/grad-norm"] = grad_norm
+        if hasattr(args, 'seq_length'):
+            wandb_stats["others/seq_length"] = args.seq_length
+
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed(barrier=True)
         elapsed_time_per_iteration = elapsed_time / total_iterations
@@ -961,7 +980,13 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
             elapsed_time_per_iteration * 10**12 * args.world_size)
 
         one_logger_utils.track_e2e_metrics(args.log_throughput, throughput)
+        tokens_per_sec = args.global_batch_size *  args.seq_length / elapsed_time_per_iteration
+        wandb_stats["stats/tflops"] = throughput
+        wandb_stats["stats/tokens_per_sec"] = tokens_per_sec
+        wandb_stats["stats/tokens_per_sec_per_gpu"] = tokens_per_sec / args.world_size
 
+        if wandb_writer and is_last_rank():
+            wandb_writer.log(wandb_stats, step=iteration)
         if args.log_timers_to_tensorboard:
             if writer:
                 writer.add_scalar('iteration-time',

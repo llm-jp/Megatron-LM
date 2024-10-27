@@ -949,13 +949,12 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
                 mem_stats["allocation.all.current"],
                 iteration,
             )
-    if args.num_experts is not None:
-        moe_loss_scale = 1 / get_num_microbatches()
-        track_moe_metrics(moe_loss_scale, iteration, writer, wandb_writer, total_loss_dict, args.moe_per_layer_logging)
 
     import typing
-
     wandb_stats: dict[str, typing.Any] = {}
+    if args.num_experts is not None:
+        moe_loss_scale = 1 / get_num_microbatches()
+        wandb_stats = track_moe_metrics(moe_loss_scale, iteration, writer, wandb_writer, total_loss_dict, args.moe_per_layer_logging, wandb_stats)
 
     opt_stats = [0.0] * 8
     opt_stats_2 = [0.0] * 4
@@ -990,6 +989,10 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         wandb_stats["others/grad-norm"] = grad_norm
         if hasattr(args, 'seq_length'):
             wandb_stats["others/seq_length"] = args.seq_length
+        if hasattr(args, 'num_experts'):
+            wandb_stats["others/num_experts"] = args.num_experts
+        if hasattr(args, 'moe_router_topk'):
+            wandb_stats["others/moe_router_topk"] = args.moe_router_topk
 
         if optimizer is not None:
             wandb_stats['optimizer/variance_l2'] = opt_stats[0]**0.5

@@ -9,7 +9,6 @@ from collections import OrderedDict
 from typing import Dict, List, Tuple, Union
 
 import orjson
-import orjsonl
 import numpy
 import torch
 
@@ -91,7 +90,9 @@ class BlendedDataset(torch.utils.data.Dataset):
         args = get_args()
         used_data_out_path = args.used_data_out_path
         os.makedirs(used_data_out_path, exist_ok=True)
-        self.used_data_out_path_rank = os.path.join(used_data_out_path, f"used_data_{args.rank}.jsonl")
+        
+        used_data_out_path_rank = os.path.join(used_data_out_path, f"used_data_{args.rank}.jsonl")
+        self.write_file = open(used_data_out_path_rank, "wb")
 
     def __len__(self) -> int:
         return self.size
@@ -114,7 +115,7 @@ class BlendedDataset(torch.utils.data.Dataset):
                 "doc_ids": d["doc_ids"],
                 "token_ids": d["tokens"].detach().cpu().numpy(),
             }
-            orjsonl.append(self.used_data_out_path_rank, row, option=orjson.OPT_SERIALIZE_NUMPY)
+            self.write_file.write(orjson.dumps(row, option=orjson.OPT_SERIALIZE_NUMPY) + b"\n")
         del d["doc_ids"]  # Remove the doc_ids from the output as it is not used in the forward pass
         return {"dataset_id": dataset_id, **d}
 

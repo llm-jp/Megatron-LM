@@ -256,6 +256,7 @@ def _load_checkpoint(queue, args):
     md.linear_bias = margs.add_bias_linear
     md.norm_has_bias = False
     md.swiglu = margs.swiglu
+    md.qkv_bias = False
     md.previous_tensor_parallel_size = margs.tensor_model_parallel_size
     md.previous_pipeline_parallel_size = margs.pipeline_model_parallel_size
     md.true_vocab_size = margs.vocab_size # skips padding in saver

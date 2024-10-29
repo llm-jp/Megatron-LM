@@ -246,10 +246,15 @@ class MCoreMoETESetter(MCoreSetter):
 
         cls.set_tensor(l.mlp.router.weight, router_weight)
 
-        num_local_experts = mlp_fc1_weight.shape[0]
-        for expert_idx in range(num_local_experts):
-            cls.set_tensor(l.mlp.experts.local_experts[expert_idx].linear_fc1.weight, mlp_fc1_weight[expert_idx])
-            cls.set_tensor(l.mlp.experts.local_experts[expert_idx].linear_fc2.weight, mlp_fc2_weight[expert_idx])
+        for expert_idx in range(len(mlp_fc1_weight)):
+            cls.set_tensor(
+                getattr(l.mlp.experts.linear_fc1, f'weight{expert_idx}'),
+                mlp_fc1_weight[expert_idx]
+            )
+            cls.set_tensor(
+                getattr(l.mlp.experts.linear_fc2, f'weight{expert_idx}'),
+                mlp_fc2_weight[expert_idx]
+            )
 
 
 def get_model_setter(model_type, transformer_impl, num_experts=0):

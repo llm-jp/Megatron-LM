@@ -92,7 +92,7 @@ class BlendedDataset(torch.utils.data.Dataset):
         os.makedirs(used_data_out_path, exist_ok=True)
         
         used_data_out_path_rank = os.path.join(used_data_out_path, f"used_data_{args.rank}.jsonl")
-        self.write_file = open(used_data_out_path_rank, "wb")
+        self.write_file = open(used_data_out_path_rank, "wb", buffering=1024 * 1024 * 1024)
 
     def __len__(self) -> int:
         return self.size

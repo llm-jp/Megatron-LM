@@ -246,8 +246,10 @@ def get_batch_on_this_cp_rank(batch):
                     val.shape[seq_dim] // (2 * cp_size),
                     *val.shape[(seq_dim + 1) :],
                 )
+                # index = torch.tensor([cp_rank, (2 * cp_size - cp_rank - 1)], 
+                #                      device="cpu", pin_memory=True).cuda(non_blocking=True)
                 index = torch.tensor([cp_rank, (2 * cp_size - cp_rank - 1)], 
-                                     device="cpu", pin_memory=True).cuda(non_blocking=True)
+                                     device="cpu", pin_memory=True)
                 val = val.index_select(seq_dim, index)
                 val = val.view(*val.shape[0:seq_dim], -1, *val.shape[(seq_dim + 2) :])
                 batch[key] = val
@@ -293,30 +295,38 @@ def get_batch_on_this_tp_rank(data_iterator):
         else:
             data = None
 
+        # batch = {
+        #     'tokens': data["tokens"].cuda(non_blocking = True),
+        #     'labels': data["labels"].cuda(non_blocking = True),
+        #     'loss_mask': data["loss_mask"].cuda(non_blocking = True),
+        #     'attention_mask': None if "attention_mask" not in data else data["attention_mask"].cuda(non_blocking = True),
+        #     'position_ids': data["position_ids"].cuda(non_blocking = True)
+        # }
+
         batch = {
-            'tokens': data["tokens"].cuda(non_blocking = True),
-            'labels': data["labels"].cuda(non_blocking = True),
-            'loss_mask': data["loss_mask"].cuda(non_blocking = True),
-            'attention_mask': None if "attention_mask" not in data else data["attention_mask"].cuda(non_blocking = True),
-            'position_ids': data["position_ids"].cuda(non_blocking = True)
+            'tokens': data["tokens"],
+            'labels': data["labels"],
+            'loss_mask': data["loss_mask"],
+            'attention_mask': None if "attention_mask" not in data else data["attention_mask"],
+            'position_ids': data["position_ids"]
         }
 
-        if args.pipeline_model_parallel_size == 1:
-            _broadcast(batch['tokens'])
-            _broadcast(batch['labels'])
-            _broadcast(batch['loss_mask'])
-            _broadcast(batch['attention_mask'])
-            _broadcast(batch['position_ids'])
+        # if args.pipeline_model_parallel_size == 1:
+        #     _broadcast(batch['tokens'])
+        #     _broadcast(batch['labels'])
+        #     _broadcast(batch['loss_mask'])
+        #     _broadcast(batch['attention_mask'])
+        #     _broadcast(batch['position_ids'])
 
-        elif mpu.is_pipeline_first_stage():
-            _broadcast(batch['tokens'])
-            _broadcast(batch['attention_mask'])
-            _broadcast(batch['position_ids'])
+        # elif mpu.is_pipeline_first_stage():
+        #     _broadcast(batch['tokens'])
+        #     _broadcast(batch['attention_mask'])
+        #     _broadcast(batch['position_ids'])
 
-        elif mpu.is_pipeline_last_stage():
-            _broadcast(batch['labels'])
-            _broadcast(batch['loss_mask'])
-            _broadcast(batch['attention_mask'])
+        # elif mpu.is_pipeline_last_stage():
+        #     _broadcast(batch['labels'])
+        #     _broadcast(batch['loss_mask'])
+        #     _broadcast(batch['attention_mask'])
 
     else:
 

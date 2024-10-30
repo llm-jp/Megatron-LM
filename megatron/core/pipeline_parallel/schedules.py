@@ -210,14 +210,15 @@ def forward_step(
             )
 
     if parallel_state.is_pipeline_last_stage():
-        if not collect_non_loss_data:
-            output_tensor = loss_func(output_tensor)
-            loss, loss_reduced = output_tensor
-            output_tensor = loss / num_microbatches
-            forward_data_store.append(loss_reduced)
-        else:
-            data = loss_func(output_tensor, non_loss_data=True)
-            forward_data_store.append(data)
+        # if not collect_non_loss_data:
+        #     output_tensor = loss_func(output_tensor)
+        #     loss, loss_reduced = output_tensor
+        #     output_tensor = loss / num_microbatches
+        #     forward_data_store.append(loss_reduced)
+        # else:
+        #     data = loss_func(output_tensor, non_loss_data=True)
+        #     forward_data_store.append(data)
+        forward_data_store.append(0)
 
     if config.timers is not None:
         config.timers('forward-compute').stop()
@@ -385,20 +386,21 @@ def forward_backward_no_pipelining(
 
     # Run computation for last microbatch out of context handler (want to
     # synchronize gradients).
-    output_tensor = forward_step(
-        forward_step_func,
-        data_iterator,
-        model,
-        num_microbatches,
-        input_tensor,
-        forward_data_store,
-        config,
-        collect_non_loss_data,
-        is_first_microbatch=check_first_val_step(
-            first_val_step, forward_only, num_microbatches == 1
-        ),
-        current_microbatch=num_microbatches - 1,
-    )
+    with no_sync_func():  # For dumping, we don't need to sync grads.
+        output_tensor = forward_step(
+            forward_step_func,
+            data_iterator,
+            model,
+            num_microbatches,
+            input_tensor,
+            forward_data_store,
+            config,
+            collect_non_loss_data,
+            is_first_microbatch=check_first_val_step(
+                first_val_step, forward_only, num_microbatches == 1
+            ),
+            current_microbatch=num_microbatches - 1,
+        )
 
     # if not forward_only:
     #     backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config)
@@ -406,10 +408,10 @@ def forward_backward_no_pipelining(
     if config.timers is not None:
         config.timers('forward-backward').stop()
 
-    if config.finalize_model_grads_func is not None and not forward_only:
-        # Finalize model grads (perform full grad all-reduce / reduce-scatter for
-        # data parallelism and layernorm all-reduce for sequence parallelism).
-        config.finalize_model_grads_func([model])
+    # if config.finalize_model_grads_func is not None and not forward_only:
+    #     # Finalize model grads (perform full grad all-reduce / reduce-scatter for
+    #     # data parallelism and layernorm all-reduce for sequence parallelism).
+    #     config.finalize_model_grads_func([model])
 
     return forward_data_store
 

@@ -162,6 +162,8 @@ def forward_step(data_iterator, model: GPTModel):
             data_iterator)
     timers('batch-generator').stop()
 
+    return None, None
+
     with stimer:
         output_tensor = torch.zeros([2048, 1, 5120],device=args.local_rank)
         # output_tensor = model(tokens, position_ids, attention_mask,

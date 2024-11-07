@@ -621,6 +621,8 @@ def train_step(forward_step_func, data_iterator,
         decoder_seq_length=args.decoder_seq_length,
         forward_only=False)
 
+    return {}, 0, 0.0, 0
+
     # Empty unused memory.
     if args.empty_unused_memory_level >= 1:
         torch.cuda.empty_cache()
@@ -703,32 +705,32 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
     total_loss_dict[nan_iters_key] = total_loss_dict.get(
         nan_iters_key, 0) + int(got_nan)
 
-    # Logging.
-    timers_to_log = [
-        'forward-backward',
-        'forward-compute',
-        'backward-compute',
-        'batch-generator',
-        'forward-recv',
-        'forward-send',
-        'backward-recv',
-        'backward-send',
-        'forward-send-forward-recv',
-        'forward-send-backward-recv',
-        'backward-send-forward-recv',
-        'backward-send-backward-recv',
-        'forward-backward-send-forward-backward-recv',
-        'layernorm-grads-all-reduce',
-        'embedding-grads-all-reduce',
-        'all-grads-sync',
-        'params-all-gather',
-        'optimizer-copy-to-main-grad',
-        'optimizer-unscale-and-check-inf',
-        'optimizer-clip-main-grad',
-        'optimizer-count-zeros',
-        'optimizer-inner-step',
-        'optimizer-copy-main-to-model-params',
-        'optimizer']
+    # # Logging.
+    # timers_to_log = [
+    #     'forward-backward',
+    #     'forward-compute',
+    #     'backward-compute',
+    #     'batch-generator',
+    #     'forward-recv',
+    #     'forward-send',
+    #     'backward-recv',
+    #     'backward-send',
+    #     'forward-send-forward-recv',
+    #     'forward-send-backward-recv',
+    #     'backward-send-forward-recv',
+    #     'backward-send-backward-recv',
+    #     'forward-backward-send-forward-backward-recv',
+    #     'layernorm-grads-all-reduce',
+    #     'embedding-grads-all-reduce',
+    #     'all-grads-sync',
+    #     'params-all-gather',
+    #     'optimizer-copy-to-main-grad',
+    #     'optimizer-unscale-and-check-inf',
+    #     'optimizer-clip-main-grad',
+    #     'optimizer-count-zeros',
+    #     'optimizer-inner-step',
+    #     'optimizer-copy-main-to-model-params',
+    #     'optimizer']
 
     # Calculate batch size.
     batch_size = args.micro_batch_size * args.data_parallel_size * \
@@ -743,147 +745,147 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
     total_iterations = total_loss_dict[advanced_iters_key] + \
                        total_loss_dict[skipped_iters_key]
 
-    # Tensorboard values.
-    # Timer requires all the ranks to call.
-    if args.log_timers_to_tensorboard and \
-       (iteration % args.tensorboard_log_interval == 0):
-        timers.write(timers_to_log, writer, iteration,
-                     normalizer=total_iterations, barrier=False, wandb_writer=wandb_writer)
-    if writer and (iteration % args.tensorboard_log_interval == 0):
-        if wandb_writer:
-            wandb_writer.log({'samples vs steps': args.consumed_train_samples},
-                             iteration)
-        if args.log_learning_rate_to_tensorboard:
-            writer.add_scalar('learning-rate', learning_rate, iteration)
-            if args.decoupled_lr is not None:
-                writer.add_scalar('decoupled-learning-rate', decoupled_learning_rate, iteration)
-            writer.add_scalar('learning-rate vs samples', learning_rate,
-                              args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'learning-rate': learning_rate}, iteration)
-        if args.log_batch_size_to_tensorboard:
-            writer.add_scalar('batch-size', batch_size, iteration)
-            writer.add_scalar('batch-size vs samples', batch_size,
-                              args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'batch-size': batch_size}, iteration)
-        for key in loss_dict:
-            writer.add_scalar(key , loss_dict[key], iteration)
-            writer.add_scalar(key + ' vs samples', loss_dict[key],
-                              args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({key: loss_dict[key]}, iteration)
-        if args.log_loss_scale_to_tensorboard:
-            writer.add_scalar('loss-scale', loss_scale, iteration)
-            writer.add_scalar('loss-scale vs samples', loss_scale,
-                              args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'loss-scale': loss_scale}, iteration)
-        if args.log_world_size_to_tensorboard:
-            writer.add_scalar('world-size', args.world_size, iteration)
-            writer.add_scalar('world-size vs samples', args.world_size,
-                              args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'world-size': args.world_size}, iteration)
-        if grad_norm is not None:
-            writer.add_scalar('grad-norm', grad_norm, iteration)
-            writer.add_scalar('grad-norm vs samples', grad_norm,
-                              args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'grad-norm': grad_norm}, iteration)
-        if num_zeros_in_grad is not None:
-            writer.add_scalar('num-zeros', num_zeros_in_grad, iteration)
-            writer.add_scalar('num-zeros vs samples', num_zeros_in_grad,
-                              args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'num-zeros': num_zeros_in_grad}, iteration)
-        if params_norm is not None:
-            writer.add_scalar('params-norm', params_norm, iteration)
-            writer.add_scalar('params-norm vs samples', params_norm,
-                              args.consumed_train_samples)
-            if wandb_writer:
-                wandb_writer.log({'params-norm': params_norm}, iteration)
-        if args.log_memory_to_tensorboard:
-            mem_stats = torch.cuda.memory_stats()
-            writer.add_scalar(
-                "mem-reserved-bytes",
-                mem_stats["reserved_bytes.all.current"],
-                iteration,
-            )
-            writer.add_scalar(
-                "mem-allocated-bytes",
-                mem_stats["allocated_bytes.all.current"],
-                iteration,
-            )
-            writer.add_scalar(
-                "mem-allocated-count",
-                mem_stats["allocation.all.current"],
-                iteration,
-            )
-    if args.num_experts is not None:
-        moe_loss_scale = 1 / get_num_microbatches()
-        track_moe_metrics(moe_loss_scale, iteration, writer, wandb_writer, total_loss_dict, args.moe_per_layer_logging)
+    # # Tensorboard values.
+    # # Timer requires all the ranks to call.
+    # if args.log_timers_to_tensorboard and \
+    #    (iteration % args.tensorboard_log_interval == 0):
+    #     timers.write(timers_to_log, writer, iteration,
+    #                  normalizer=total_iterations, barrier=False, wandb_writer=wandb_writer)
+    # if writer and (iteration % args.tensorboard_log_interval == 0):
+    #     if wandb_writer:
+    #         wandb_writer.log({'samples vs steps': args.consumed_train_samples},
+    #                          iteration)
+    #     if args.log_learning_rate_to_tensorboard:
+    #         writer.add_scalar('learning-rate', learning_rate, iteration)
+    #         if args.decoupled_lr is not None:
+    #             writer.add_scalar('decoupled-learning-rate', decoupled_learning_rate, iteration)
+    #         writer.add_scalar('learning-rate vs samples', learning_rate,
+    #                           args.consumed_train_samples)
+    #         if wandb_writer:
+    #             wandb_writer.log({'learning-rate': learning_rate}, iteration)
+    #     if args.log_batch_size_to_tensorboard:
+    #         writer.add_scalar('batch-size', batch_size, iteration)
+    #         writer.add_scalar('batch-size vs samples', batch_size,
+    #                           args.consumed_train_samples)
+    #         if wandb_writer:
+    #             wandb_writer.log({'batch-size': batch_size}, iteration)
+    #     for key in loss_dict:
+    #         writer.add_scalar(key , loss_dict[key], iteration)
+    #         writer.add_scalar(key + ' vs samples', loss_dict[key],
+    #                           args.consumed_train_samples)
+    #         if wandb_writer:
+    #             wandb_writer.log({key: loss_dict[key]}, iteration)
+    #     if args.log_loss_scale_to_tensorboard:
+    #         writer.add_scalar('loss-scale', loss_scale, iteration)
+    #         writer.add_scalar('loss-scale vs samples', loss_scale,
+    #                           args.consumed_train_samples)
+    #         if wandb_writer:
+    #             wandb_writer.log({'loss-scale': loss_scale}, iteration)
+    #     if args.log_world_size_to_tensorboard:
+    #         writer.add_scalar('world-size', args.world_size, iteration)
+    #         writer.add_scalar('world-size vs samples', args.world_size,
+    #                           args.consumed_train_samples)
+    #         if wandb_writer:
+    #             wandb_writer.log({'world-size': args.world_size}, iteration)
+    #     if grad_norm is not None:
+    #         writer.add_scalar('grad-norm', grad_norm, iteration)
+    #         writer.add_scalar('grad-norm vs samples', grad_norm,
+    #                           args.consumed_train_samples)
+    #         if wandb_writer:
+    #             wandb_writer.log({'grad-norm': grad_norm}, iteration)
+    #     if num_zeros_in_grad is not None:
+    #         writer.add_scalar('num-zeros', num_zeros_in_grad, iteration)
+    #         writer.add_scalar('num-zeros vs samples', num_zeros_in_grad,
+    #                           args.consumed_train_samples)
+    #         if wandb_writer:
+    #             wandb_writer.log({'num-zeros': num_zeros_in_grad}, iteration)
+    #     if params_norm is not None:
+    #         writer.add_scalar('params-norm', params_norm, iteration)
+    #         writer.add_scalar('params-norm vs samples', params_norm,
+    #                           args.consumed_train_samples)
+    #         if wandb_writer:
+    #             wandb_writer.log({'params-norm': params_norm}, iteration)
+    #     if args.log_memory_to_tensorboard:
+    #         mem_stats = torch.cuda.memory_stats()
+    #         writer.add_scalar(
+    #             "mem-reserved-bytes",
+    #             mem_stats["reserved_bytes.all.current"],
+    #             iteration,
+    #         )
+    #         writer.add_scalar(
+    #             "mem-allocated-bytes",
+    #             mem_stats["allocated_bytes.all.current"],
+    #             iteration,
+    #         )
+    #         writer.add_scalar(
+    #             "mem-allocated-count",
+    #             mem_stats["allocation.all.current"],
+    #             iteration,
+    #         )
+    # if args.num_experts is not None:
+    #     moe_loss_scale = 1 / get_num_microbatches()
+    #     track_moe_metrics(moe_loss_scale, iteration, writer, wandb_writer, total_loss_dict, args.moe_per_layer_logging)
 
     import typing
 
     wandb_stats: dict[str, typing.Any] = {}
 
-    opt_stats = [0.0] * 8
-    opt_stats_2 = [0.0] * 4
-    if optimizer is not None:
-        """logging optimizer states"""
-        for _, param_group in enumerate(optimizer.param_groups):
-            for _, param in enumerate(param_group["params"]):
-                opt_stats[0] += (torch.norm(optimizer.state[param]['exp_avg_sq']).item())**2
-                opt_stats[1] += (torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt()).item())**2
-                opt_stats[2] += (torch.norm(optimizer.state[param]['exp_avg']).item())**2
-                opt_stats[3] += (torch.norm(param).item())**2
-                opt_stats[4] += torch.norm(optimizer.state[param]['exp_avg_sq'], p=1).item()
-                opt_stats[5] += torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt(), p=1).item()
-                opt_stats[6] += torch.norm(optimizer.state[param]['exp_avg'], p=1).item()
-                opt_stats[7] += torch.norm(param, p=1).item()
-                opt_stats_2[0] = max(opt_stats_2[0], abs(optimizer.state[param]['exp_avg_sq'].max().item()), abs(optimizer.state[param]['exp_avg_sq'].min().item()))
-                opt_stats_2[1] = max(opt_stats_2[1], optimizer.state[param]['exp_avg_sq'].sqrt().abs_().max().item())
-                opt_stats_2[2] = max(opt_stats_2[2], abs(optimizer.state[param]['exp_avg'].max().item()), abs(optimizer.state[param]['exp_avg'].min().item()))
-                opt_stats_2[3] = max(opt_stats_2[3], abs(param.max().item()), abs(param.min().item()))
+    # opt_stats = [0.0] * 8
+    # opt_stats_2 = [0.0] * 4
+    # if optimizer is not None:
+    #     """logging optimizer states"""
+    #     for _, param_group in enumerate(optimizer.param_groups):
+    #         for _, param in enumerate(param_group["params"]):
+    #             opt_stats[0] += (torch.norm(optimizer.state[param]['exp_avg_sq']).item())**2
+    #             opt_stats[1] += (torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt()).item())**2
+    #             opt_stats[2] += (torch.norm(optimizer.state[param]['exp_avg']).item())**2
+    #             opt_stats[3] += (torch.norm(param).item())**2
+    #             opt_stats[4] += torch.norm(optimizer.state[param]['exp_avg_sq'], p=1).item()
+    #             opt_stats[5] += torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt(), p=1).item()
+    #             opt_stats[6] += torch.norm(optimizer.state[param]['exp_avg'], p=1).item()
+    #             opt_stats[7] += torch.norm(param, p=1).item()
+    #             opt_stats_2[0] = max(opt_stats_2[0], abs(optimizer.state[param]['exp_avg_sq'].max().item()), abs(optimizer.state[param]['exp_avg_sq'].min().item()))
+    #             opt_stats_2[1] = max(opt_stats_2[1], optimizer.state[param]['exp_avg_sq'].sqrt().abs_().max().item())
+    #             opt_stats_2[2] = max(opt_stats_2[2], abs(optimizer.state[param]['exp_avg'].max().item()), abs(optimizer.state[param]['exp_avg'].min().item()))
+    #             opt_stats_2[3] = max(opt_stats_2[3], abs(param.max().item()), abs(param.min().item()))
 
-    if wandb_writer and (iteration % args.tensorboard_log_interval == 0) and is_last_rank():
-        wandb_stats["utils/steps-vs-samples"] = args.consumed_train_samples
-        wandb_stats["utils/steps-vs-tokens"] = args.consumed_train_tokens
+    # if wandb_writer and (iteration % args.tensorboard_log_interval == 0) and is_last_rank():
+    #     wandb_stats["utils/steps-vs-samples"] = args.consumed_train_samples
+    #     wandb_stats["utils/steps-vs-tokens"] = args.consumed_train_tokens
 
-        if args.log_learning_rate_to_tensorboard:
-            wandb_stats["utils/learning-rate"] = learning_rate
+    #     if args.log_learning_rate_to_tensorboard:
+    #         wandb_stats["utils/learning-rate"] = learning_rate
 
-        if args.log_batch_size_to_tensorboard:
-            wandb_stats["utils/batch-size"] = batch_size
+    #     if args.log_batch_size_to_tensorboard:
+    #         wandb_stats["utils/batch-size"] = batch_size
 
-        for key in loss_dict:
-            wandb_stats[f"lm-loss-training/{key}"] = loss_dict[key]
-            wandb_stats[f"lm-loss-training/{key}_ppl"] = math.exp(total_loss_dict[key].item())
-        if args.log_loss_scale_to_tensorboard:
-            wandb_stats["others/loss-scale"] = loss_scale
-        if grad_norm is not None:
-            wandb_stats["others/grad-norm"] = grad_norm
-        if num_zeros_in_grad is not None:
-            wandb_stats["others/num-zeros"] = num_zeros_in_grad
-        if params_norm is not None:
-            wandb_stats["others/params-norm"] = params_norm
-        if hasattr(args, 'actual_seq_length'):
-            wandb_stats["others/actual_seq_length"] = args.actual_seq_length
+    #     for key in loss_dict:
+    #         wandb_stats[f"lm-loss-training/{key}"] = loss_dict[key]
+    #         wandb_stats[f"lm-loss-training/{key}_ppl"] = math.exp(total_loss_dict[key].item())
+    #     if args.log_loss_scale_to_tensorboard:
+    #         wandb_stats["others/loss-scale"] = loss_scale
+    #     if grad_norm is not None:
+    #         wandb_stats["others/grad-norm"] = grad_norm
+    #     if num_zeros_in_grad is not None:
+    #         wandb_stats["others/num-zeros"] = num_zeros_in_grad
+    #     if params_norm is not None:
+    #         wandb_stats["others/params-norm"] = params_norm
+    #     if hasattr(args, 'actual_seq_length'):
+    #         wandb_stats["others/actual_seq_length"] = args.actual_seq_length
 
-        if optimizer is not None:
-            wandb_stats['optimizer/variance_l2'] = opt_stats[0]**0.5
-            wandb_stats['optimizer/variance_sqrt_l2'] = opt_stats[1]**0.5
-            wandb_stats['optimizer/momentum_l2'] = opt_stats[2]**0.5
-            wandb_stats['optimizer/weight_l2'] = opt_stats[3]**0.5
-            wandb_stats['optimizer/variance_l1'] = opt_stats[4]
-            wandb_stats['optimizer/variance_sqrt_l1'] = opt_stats[5]
-            wandb_stats['optimizer/momentum_l1'] = opt_stats[6]
-            wandb_stats['optimizer/weight_l1'] = opt_stats[7]
-            wandb_stats['optimizer/variance_abs_max'] = opt_stats_2[0]
-            wandb_stats['optimizer/variance_sqrt_abs_max'] = opt_stats_2[1]
-            wandb_stats['optimizer/momentum_abs_max'] = opt_stats_2[2]
-            wandb_stats['optimizer/weight_abs_max'] = opt_stats_2[3]
+    #     if optimizer is not None:
+    #         wandb_stats['optimizer/variance_l2'] = opt_stats[0]**0.5
+    #         wandb_stats['optimizer/variance_sqrt_l2'] = opt_stats[1]**0.5
+    #         wandb_stats['optimizer/momentum_l2'] = opt_stats[2]**0.5
+    #         wandb_stats['optimizer/weight_l2'] = opt_stats[3]**0.5
+    #         wandb_stats['optimizer/variance_l1'] = opt_stats[4]
+    #         wandb_stats['optimizer/variance_sqrt_l1'] = opt_stats[5]
+    #         wandb_stats['optimizer/momentum_l1'] = opt_stats[6]
+    #         wandb_stats['optimizer/weight_l1'] = opt_stats[7]
+    #         wandb_stats['optimizer/variance_abs_max'] = opt_stats_2[0]
+    #         wandb_stats['optimizer/variance_sqrt_abs_max'] = opt_stats_2[1]
+    #         wandb_stats['optimizer/momentum_abs_max'] = opt_stats_2[2]
+    #         wandb_stats['optimizer/weight_abs_max'] = opt_stats_2[3]
 
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed(barrier=True)
@@ -933,50 +935,50 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
                     writer.add_scalar('throughput', throughput, iteration)
                 if wandb_writer:
                     wandb_writer.log({'throughput': throughput}, iteration)
-        log_string += ' iteration time: {:.3f} s'.format(elapsed_time)
-        log_string += ' samples/sec: {:.1f} |'.format(samples_per_sec)
-        log_string += ' TFLOPS(original): {:.1f} |'.format(tflops)
-        assert learning_rate is not None
-        # Decoupled_learning_rate should be not None only on first and last pipeline stage.
-        log_string += ' learning rate: {:.6E} |'.format(learning_rate)
-        if args.decoupled_lr is not None and (mpu.is_pipeline_first_stage(ignore_virtual=True) or
-                                              mpu.is_pipeline_last_stage(ignore_virtual=True)):
-            assert decoupled_learning_rate is not None
-            log_string += ' decoupled learning rate: {:.6E} |'.format(decoupled_learning_rate)
-        else:
-            assert decoupled_learning_rate is None
-        log_string += ' global batch size: {:5d} |'.format(batch_size)
-        for key in total_loss_dict:
-            if key not in [advanced_iters_key, skipped_iters_key,
-                           nan_iters_key]:
-                avg = total_loss_dict[key].item() / \
-                      float(max(1, total_loss_dict[advanced_iters_key]))
-                if avg > 0.0:
-                    log_string += ' {}: {:.6E} |'.format(key, avg)
-                total_loss_dict[key] = torch.tensor([0.0], dtype=torch.float, device='cuda')
-        log_string += ' loss scale: {:.1f} |'.format(loss_scale)
-        if grad_norm is not None:
-            log_string += ' grad norm: {:.3f} |'.format(grad_norm)
-        if num_zeros_in_grad is not None:
-            log_string += ' num zeros: {:.1f} |'.format(num_zeros_in_grad)
-        if params_norm is not None:
-            log_string += ' params norm: {:.3f} |'.format(params_norm)
-        log_string += ' number of skipped iterations: {:3d} |'.format(
-            total_loss_dict[skipped_iters_key])
-        log_string += ' number of nan iterations: {:3d} |'.format(
-            total_loss_dict[nan_iters_key])
-        total_loss_dict[advanced_iters_key] = 0
-        total_loss_dict[skipped_iters_key] = 0
-        total_loss_dict[nan_iters_key] = 0
-        print_rank_last(log_string)
-        if report_memory_flag and learning_rate > 0.:
-            # Report memory after optimizer state has been initialized.
-            if torch.distributed.get_rank() == 0:
-                num_microbatches = get_num_microbatches()
-                report_theoretical_memory(args, num_microbatches=num_microbatches, verbose=True)
-            report_memory('(after {} iterations)'.format(iteration))
-            report_memory_flag = False
-        timers.log(timers_to_log, normalizer=args.log_interval)
+        # log_string += ' iteration time: {:.3f} s'.format(elapsed_time)
+        # log_string += ' samples/sec: {:.1f} |'.format(samples_per_sec)
+        # log_string += ' TFLOPS(original): {:.1f} |'.format(tflops)
+        # assert learning_rate is not None
+        # # Decoupled_learning_rate should be not None only on first and last pipeline stage.
+        # log_string += ' learning rate: {:.6E} |'.format(learning_rate)
+        # if args.decoupled_lr is not None and (mpu.is_pipeline_first_stage(ignore_virtual=True) or
+        #                                       mpu.is_pipeline_last_stage(ignore_virtual=True)):
+        #     assert decoupled_learning_rate is not None
+        #     log_string += ' decoupled learning rate: {:.6E} |'.format(decoupled_learning_rate)
+        # else:
+        #     assert decoupled_learning_rate is None
+        # log_string += ' global batch size: {:5d} |'.format(batch_size)
+        # for key in total_loss_dict:
+        #     if key not in [advanced_iters_key, skipped_iters_key,
+        #                    nan_iters_key]:
+        #         avg = total_loss_dict[key].item() / \
+        #               float(max(1, total_loss_dict[advanced_iters_key]))
+        #         if avg > 0.0:
+        #             log_string += ' {}: {:.6E} |'.format(key, avg)
+        #         total_loss_dict[key] = torch.tensor([0.0], dtype=torch.float, device='cuda')
+        # log_string += ' loss scale: {:.1f} |'.format(loss_scale)
+        # if grad_norm is not None:
+        #     log_string += ' grad norm: {:.3f} |'.format(grad_norm)
+        # if num_zeros_in_grad is not None:
+        #     log_string += ' num zeros: {:.1f} |'.format(num_zeros_in_grad)
+        # if params_norm is not None:
+        #     log_string += ' params norm: {:.3f} |'.format(params_norm)
+        # log_string += ' number of skipped iterations: {:3d} |'.format(
+        #     total_loss_dict[skipped_iters_key])
+        # log_string += ' number of nan iterations: {:3d} |'.format(
+        #     total_loss_dict[nan_iters_key])
+        # total_loss_dict[advanced_iters_key] = 0
+        # total_loss_dict[skipped_iters_key] = 0
+        # total_loss_dict[nan_iters_key] = 0
+        # print_rank_last(log_string)
+        # if report_memory_flag and learning_rate > 0.:
+        #     # Report memory after optimizer state has been initialized.
+        #     if torch.distributed.get_rank() == 0:
+        #         num_microbatches = get_num_microbatches()
+        #         report_theoretical_memory(args, num_microbatches=num_microbatches, verbose=True)
+        #     report_memory('(after {} iterations)'.format(iteration))
+        #     report_memory_flag = False
+        # timers.log(timers_to_log, normalizer=args.log_interval)
 
     return report_memory_flag
 

@@ -153,9 +153,17 @@ def get_megatron_sharded_states(args, tp_size, pp_size, ep_size, pp_rank):
         for ep_index, j in enumerate(range(ep_size)):
             sub_dir_name = get_checkpoint_sub_dir_name(i, pp_rank, pp_size, j, ep_size)
             print(f"Loading {sub_dir_name}...")
-            checkpoint_name = os.listdir(os.path.join(args.load_path, sub_dir_name))[0]
-            checkpoint_path = os.path.join(args.load_path, sub_dir_name, checkpoint_name)
+            # Since distrib_optim.pt is unnecessary, explicitly specify model_optim_rng.pt instead.
+            checkpoint_path = os.path.join(args.load_path, sub_dir_name, 'model_optim_rng.pt')
+            if not os.path.exists(checkpoint_path):
+                raise FileNotFoundError(
+                    f"Could not find model_optim_rng.pt in {os.path.join(args.load_path, sub_dir_name)}. "
+                    f"Available files: {os.listdir(os.path.join(args.load_path, sub_dir_name))}"
+                )
+
+            print(f"Loading checkpoint from: {checkpoint_path}")
             state_dict = torch.load(checkpoint_path, map_location="cpu")
+            print("checkpoint_path", checkpoint_path)
             ep_length = len(
                 [
                     i

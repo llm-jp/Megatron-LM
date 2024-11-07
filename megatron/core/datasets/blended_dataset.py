@@ -90,9 +90,15 @@ class BlendedDataset(torch.utils.data.Dataset):
         args = get_args()
         used_data_out_path = args.used_data_out_path
         os.makedirs(used_data_out_path, exist_ok=True)
-        
+
         used_data_out_path_rank = os.path.join(used_data_out_path, f"used_data_{args.rank}.jsonl")
-        self.write_file = open(used_data_out_path_rank, "wb")
+        if args.skip_train_iteration_range:
+            start, end = args.skip_train_iteration_range[0]
+            self.skip_iterations = set(range(start, end + 1))
+            self.write_file = open(used_data_out_path_rank, "ab")
+        else:
+            self.skip_iterations = set()
+            self.write_file = open(used_data_out_path_rank, "wb")
 
     def __len__(self) -> int:
         return self.size
@@ -105,7 +111,7 @@ class BlendedDataset(torch.utils.data.Dataset):
         dataset_id = self.dataset_index[idx]
         dataset_sample_id = self.dataset_sample_index[idx]
         d = self.datasets[dataset_id][dataset_sample_id]
-        if iteration < args.train_iters:
+        if iteration < args.train_iters and iteration not in self.skip_iterations:
             # `iteration` can exceed train_iters due to the prefetching of the next batch
             dataset_name = args.data_path[2 * dataset_id + 1]  # weight, path, weight, path, ...
             row = {

@@ -1043,6 +1043,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         one_logger_utils.track_e2e_metrics(args.log_throughput, throughput)
         tokens_per_sec = args.global_batch_size *  args.seq_length / elapsed_time_per_iteration
         wandb_stats["stats/tflops"] = throughput
+        wandb_stats["stats/1_iteration_time"] = elapsed_time_per_iteration
         wandb_stats["stats/tokens_per_sec"] = tokens_per_sec
         wandb_stats["stats/tokens_per_sec_per_gpu"] = tokens_per_sec / args.world_size
 

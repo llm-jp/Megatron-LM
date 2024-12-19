@@ -8,6 +8,7 @@ from datetime import datetime
 import math
 import logging
 import os
+import re
 import sys
 from .log_handler import CustomHandler
 # Make default logging level INFO, but filter out all log messages not from MCore.
@@ -205,6 +206,16 @@ def is_save_iteration(iteration: int) -> bool:
     Returns:
         True if we should save checkpoint, False otherwise.
     """
+    args = get_args()
+
+    if args.save_iter_patterns is not None:
+        save_iter_patterns = [re.compile(p) for p in args.save_iter_patterns]
+        iter_str = str(iteration)
+        for p in save_iter_patterns:
+            if p.fullmatch(iter_str):
+                return True
+
+
     if iteration < 10:
         # 0, 1, ..., 9
         return True

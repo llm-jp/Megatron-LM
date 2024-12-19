@@ -212,7 +212,7 @@ def is_save_iteration(iteration: int) -> bool:
         save_iter_patterns = [re.compile(p) for p in args.save_iter_patterns]
         iter_str = str(iteration)
         for p in save_iter_patterns:
-            if p.match(iter_str):
+            if p.fullmatch(iter_str):
                 return True
 
 

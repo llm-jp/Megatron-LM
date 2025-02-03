@@ -121,7 +121,7 @@ class VocabParallelCrossEntropy:
 
 class _VocabParallelCrossEntropy(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, vocab_parallel_logits, target, label_smoothing=0.0):
+    def forward(ctx, vocab_parallel_logits, target, label_smoothing=0.0, z_loss_strength=1e-4):
         """Vocab parallel cross entropy forward function."""
 
         vocab_parallel_logits, logits_max = VocabParallelCrossEntropy.calculate_logits_max(
@@ -181,6 +181,21 @@ class _VocabParallelCrossEntropy(torch.autograd.Function):
             mean_log_probs = log_probs.mean(dim=-1)
             loss = (1.0 - smoothing) * loss - smoothing * mean_log_probs
 
+        # z-loss
+        if z_loss_strength > 0:
+            # log(sum(exp(logits)))
+            # = log(sum(exp(logits - max(logits) + max(logits))))
+            # = log(sum(exp(logits - max(logits))) * exp(max(logits)))
+            # = log(sum(exp(logits - max(logits)))) + max(logits)
+            # = log(sum_exp_logits) + max(logits)
+            # where sum_exp_logits is defined as sum(exp(logits - max(logits)))
+            log_Z = torch.log(sum_exp_logits) + logits_max
+            z_loss = z_loss_strength * log_Z * log_Z
+            loss = loss + z_loss
+
+            # for backward
+            exp_logits *= (1.0 + 2 * z_loss_strength * log_Z.unsqueeze(dim=-1))
+
         ctx.label_smoothing, ctx.vocab_size = label_smoothing, vocab_size
 
         # Store softmax, target-mask and masked-target for backward pass.
@@ -213,10 +228,10 @@ class _VocabParallelCrossEntropy(torch.autograd.Function):
                 grad_2d, arange_1d, masked_target_1d, softmax_update, grad_input, grad_output
             )
 
-        return grad_input, None, None
+        return grad_input, None, None, None
 
 
-def vocab_parallel_cross_entropy(vocab_parallel_logits, target, label_smoothing=0.0):
+def vocab_parallel_cross_entropy(vocab_parallel_logits, target, label_smoothing=0.0, z_loss_strength=1e-4):
     """
     Performs cross entropy loss when logits are split across tensor parallel ranks
 
@@ -229,4 +244,4 @@ def vocab_parallel_cross_entropy(vocab_parallel_logits, target, label_smoothing=
         label_smoothing: smoothing factor, must be in range [0.0, 1.0)
                          default is no smoothing (=0.0)
     """
-    return _VocabParallelCrossEntropy.apply(vocab_parallel_logits, target, label_smoothing)
+    return _VocabParallelCrossEntropy.apply(vocab_parallel_logits, target, label_smoothing, z_loss_strength)

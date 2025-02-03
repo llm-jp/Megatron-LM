@@ -44,7 +44,7 @@ except ImportError:
 
 from megatron.core.distributed import finalize_model_grads
 from megatron.core.enums import ModelType
-from megatron.core.optimizer import get_megatron_optimizer, OptimizerConfig
+from megatron.core.optimizer import get_megatron_optimizer, OptimizerConfig, ChainedOptimizer
 from megatron.core.rerun_state_machine import (
     get_rerun_state_machine,
     destroy_rerun_state_machine,
@@ -865,7 +865,7 @@ def train_step(forward_step_func, data_iterator,
 
 def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_rate, iteration,
                  loss_scale, report_memory_flag, skipped_iter,
-                 grad_norm, params_norm, num_zeros_in_grad):
+                 grad_norm, params_norm, num_zeros_in_grad, optimizer):
     """Log training information such as losses, timing, ...."""
     args = get_args()
     timers = get_timers()
@@ -1031,9 +1031,89 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
                 mem_stats["allocation.all.current"],
                 iteration,
             )
+
+    import typing
+    wandb_stats: dict[str, typing.Any] = {}
     if args.num_experts is not None:
         moe_loss_scale = 1 / get_num_microbatches()
-        track_moe_metrics(moe_loss_scale, iteration, writer, wandb_writer, total_loss_dict, args.moe_per_layer_logging)
+        wandb_stats = track_moe_metrics(moe_loss_scale, iteration, writer, wandb_writer, total_loss_dict, args.moe_per_layer_logging, wandb_stats)
+
+    opt_stats = [0.0] * 8
+    opt_stats_2 = [0.0] * 4
+    if optimizer is not None:
+        # https://github.com/llm-jp/Megatron-LM/blob/3a8b91c311ab96043c8f1a57294ec7ad3ee806a8/megatron/core/optimizer/__init__.py#L421-L445
+        # For expert_parallel
+        if isinstance(optimizer, ChainedOptimizer):
+            for opt in optimizer.chained_optimizers:
+                for group in opt.optimizer.param_groups:
+                    for param in group['params']:
+                        if param in opt.optimizer.state:
+                            state = opt.optimizer.state[param]
+                            if 'exp_avg_sq' in state:
+                                opt_stats[0] += (torch.norm(state['exp_avg_sq']).item())**2
+                                opt_stats[1] += (torch.norm(state['exp_avg_sq'].sqrt()).item())**2
+                                opt_stats[4] += torch.norm(state['exp_avg_sq'], p=1).item()
+                                opt_stats[5] += torch.norm(state['exp_avg_sq'].sqrt(), p=1).item()
+                                opt_stats_2[0] = max(opt_stats_2[0], abs(state['exp_avg_sq'].max().item()), abs(state['exp_avg_sq'].min().item()))
+                                opt_stats_2[1] = max(opt_stats_2[1], state['exp_avg_sq'].sqrt().abs_().max().item())
+
+                            if 'exp_avg' in state:
+                                opt_stats[2] += (torch.norm(state['exp_avg']).item())**2
+                                opt_stats[6] += torch.norm(state['exp_avg'], p=1).item()
+                                opt_stats_2[2] = max(opt_stats_2[2], abs(state['exp_avg'].max().item()), abs(state['exp_avg'].min().item()))
+
+                            opt_stats[3] += (torch.norm(param).item())**2
+                            opt_stats[7] += torch.norm(param, p=1).item()
+                            opt_stats_2[3] = max(opt_stats_2[3], abs(param.max().item()), abs(param.min().item()))
+        else:
+            """logging optimizer states"""
+            for _, param_group in enumerate(optimizer.param_groups):
+                for _, param in enumerate(param_group["params"]):
+                    opt_stats[0] += (torch.norm(optimizer.state[param]['exp_avg_sq']).item())**2
+                    opt_stats[1] += (torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt()).item())**2
+                    opt_stats[2] += (torch.norm(optimizer.state[param]['exp_avg']).item())**2
+                    opt_stats[3] += (torch.norm(param).item())**2
+                    opt_stats[4] += torch.norm(optimizer.state[param]['exp_avg_sq'], p=1).item()
+                    opt_stats[5] += torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt(), p=1).item()
+                    opt_stats[6] += torch.norm(optimizer.state[param]['exp_avg'], p=1).item()
+                    opt_stats[7] += torch.norm(param, p=1).item()
+                    opt_stats_2[0] = max(opt_stats_2[0], abs(optimizer.state[param]['exp_avg_sq'].max().item()), abs(optimizer.state[param]['exp_avg_sq'].min().item()))
+                    opt_stats_2[1] = max(opt_stats_2[1], optimizer.state[param]['exp_avg_sq'].sqrt().abs_().max().item())
+                    opt_stats_2[2] = max(opt_stats_2[2], abs(optimizer.state[param]['exp_avg'].max().item()), abs(optimizer.state[param]['exp_avg'].min().item()))
+                    opt_stats_2[3] = max(opt_stats_2[3], abs(param.max().item()), abs(param.min().item()))
+
+    if wandb_writer and (iteration % args.tensorboard_log_interval == 0) and is_last_rank():
+        wandb_stats["utils/steps-vs-samples"] = args.consumed_train_samples
+
+        wandb_stats["utils/learning-rate"] = learning_rate
+        wandb_stats["utils/batch-size"] = batch_size
+
+        for key in loss_dict:
+            wandb_stats[f"lm-loss-training/{key}"] = loss_dict[key]
+            wandb_stats[f"lm-loss-training/{key}_ppl"] = math.exp(total_loss_dict[key].item())
+
+        wandb_stats["others/loss-scale"] = loss_scale
+        wandb_stats["others/grad-norm"] = grad_norm
+        if hasattr(args, 'seq_length'):
+            wandb_stats["others/seq_length"] = args.seq_length
+        if hasattr(args, 'num_experts'):
+            wandb_stats["others/num_experts"] = args.num_experts
+        if hasattr(args, 'moe_router_topk'):
+            wandb_stats["others/moe_router_topk"] = args.moe_router_topk
+
+        if optimizer is not None:
+            wandb_stats['optimizer/variance_l2'] = opt_stats[0]**0.5
+            wandb_stats['optimizer/variance_sqrt_l2'] = opt_stats[1]**0.5
+            wandb_stats['optimizer/momentum_l2'] = opt_stats[2]**0.5
+            wandb_stats['optimizer/weight_l2'] = opt_stats[3]**0.5
+            wandb_stats['optimizer/variance_l1'] = opt_stats[4]
+            wandb_stats['optimizer/variance_sqrt_l1'] = opt_stats[5]
+            wandb_stats['optimizer/momentum_l1'] = opt_stats[6]
+            wandb_stats['optimizer/weight_l1'] = opt_stats[7]
+            wandb_stats['optimizer/variance_abs_max'] = opt_stats_2[0]
+            wandb_stats['optimizer/variance_sqrt_abs_max'] = opt_stats_2[1]
+            wandb_stats['optimizer/momentum_abs_max'] = opt_stats_2[2]
+            wandb_stats['optimizer/weight_abs_max'] = opt_stats_2[3]
 
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed(barrier=True)
@@ -1043,7 +1123,14 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
             elapsed_time_per_iteration * 10**12 * args.world_size)
 
         one_logger_utils.track_e2e_metrics(args.log_throughput, throughput)
+        tokens_per_sec = args.global_batch_size *  args.seq_length / elapsed_time_per_iteration
+        wandb_stats["stats/tflops"] = throughput
+        wandb_stats["stats/1_iteration_time"] = elapsed_time_per_iteration
+        wandb_stats["stats/tokens_per_sec"] = tokens_per_sec
+        wandb_stats["stats/tokens_per_sec_per_gpu"] = tokens_per_sec / args.world_size
 
+        if wandb_writer and is_last_rank():
+            wandb_writer.log(wandb_stats, step=iteration)
         if args.log_timers_to_tensorboard:
             if writer:
                 writer.add_scalar('iteration-time',
@@ -1568,7 +1655,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                           decoupled_learning_rate,
                                           iteration, loss_scale,
                                           report_memory_flag, skipped_iter,
-                                          grad_norm, params_norm, num_zeros_in_grad)
+                                          grad_norm, params_norm, num_zeros_in_grad, optimizer)
 
         # Evaluation.
         if args.eval_interval and iteration % args.eval_interval == 0 and \

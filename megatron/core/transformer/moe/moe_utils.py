@@ -538,13 +538,19 @@ def reduce_aux_losses_tracker_across_ranks():
 
 
 def track_moe_metrics(
-    loss_scale, iteration, writer, wandb_writer=None, total_loss_dict=None, per_layer_logging=False
+    loss_scale,
+    iteration,
+    writer,
+    wandb_writer=None,
+    total_loss_dict=None,
+    per_layer_logging=False,
+    wandb_stats=None
 ):
     """Track the MoE metrics for logging."""
     # Aux loss logging
     reduce_aux_losses_tracker_across_ranks()
     tracker = parallel_state.get_moe_layer_wise_logging_tracker()
-    if writer is not None:
+    if wandb_writer is not None:
         aux_losses = {k: v['values'].float() * loss_scale for k, v in tracker.items()}
         for name, loss_list in aux_losses.items():
             if total_loss_dict is not None:
@@ -556,23 +562,77 @@ def track_moe_metrics(
             # currently when using add_scalars,
             # torch.utils.add_scalars makes each timer its own run, which
             # polutes the runs list, so we just add each as a scalar
-            writer.add_scalar(name, loss_list.mean(), iteration)
-            if per_layer_logging:
-                for i, loss in enumerate(loss_list.tolist()):
-                    writer.add_scalar(f"moe/{name}_layer_{i}", loss, iteration)
+            if writer is not None:
+                writer.add_scalar(name, loss_list.mean(), iteration)
+                if per_layer_logging:
+                    for i, loss in enumerate(loss_list.tolist()):
+                        writer.add_scalar(f"moe/{name}_layer_{i}", loss, iteration)
 
             # W&B logging lacks support for logging multiple scalars simultaneously.
             # As a workaround, we log each scalar individually first, then we can create
             # a custom panel to manually group them to a single plot.
             if wandb_writer:
-                wandb_writer.log({f"{name}": loss_list.mean()}, iteration)
+                wandb_stats[f"lm-loss-training/{name}"] = loss_list.mean()
+                if writer is not None:
+                    wandb_writer.log({f"{name}": loss_list.mean()}, iteration)
                 if per_layer_logging:
-                    wandb_writer.log(
-                        {
-                            f"moe/{name}_layer_{i}": loss
-                            for i, loss in enumerate(loss_list.tolist())
-                        },
-                        iteration,
-                    )
+                    if writer is not None:
+                        wandb_writer.log(
+                            {
+                                f"moe/{name}_layer_{i}": loss
+                                for i, loss in enumerate(loss_list.tolist())
+                            },
+                            iteration,
+                        )
+                    for i, loss in enumerate(loss_list.tolist()):
+                        wandb_stats[f"moe/{name}_layer_{i}"] = loss
 
     clear_aux_losses_tracker()
+    return wandb_stats
+
+
+class moe_gather(torch.autograd.Function):
+    """Gather the input tensor based on the map tensor."""
+
+    @staticmethod
+    def forward(ctx, input_, map_):
+        """Gather the input tensor based on the map tensor."""
+        ctx.input_size = input_.size()
+        ctx.map = map_
+        return torch.gather(input_, 0, map_)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """Scatter the grad_output tensor based on the map tensor."""
+        input_size = ctx.input_size
+        map_ = ctx.map
+
+        output = torch.zeros(
+            input_size, dtype=grad_output.dtype, device=torch.cuda.current_device()
+        )
+        output.scatter_add_(0, map_, grad_output)
+        return output, None, None
+
+
+class moe_scatter(torch.autograd.Function):
+    """Scatter the input tensor based on the map tensor."""
+
+    @staticmethod
+    def forward(ctx, input_, map_, output_size=None):
+        """Scatter the input tensor based on the map tensor."""
+        ctx.map = map_
+
+        if output_size is not None:
+            output = torch.zeros(output_size, dtype=input_.dtype, device=input_.device)
+        else:
+            output = torch.zeros_like(input_)
+
+        output.scatter_add_(0, map_, input_)
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """Gather the grad_output tensor based on the map tensor."""
+        map_ = ctx.map
+        grad_input = torch.gather(grad_output, 0, map_)
+        return grad_input, None, None, None

@@ -53,6 +53,7 @@ def load_args_from_checkpoint(args):
     args.ffn_hidden_size = mixtral_config.intermediate_size
     args.num_experts = mixtral_config.num_local_experts
     args.sequence_parallel = True
+    args.moe_grouped_gemm = True
 
     if mixtral_config.num_key_value_heads:
         args.group_query_attention = True
@@ -100,17 +101,17 @@ def set_mlp_state(args, layer, hf_layer):
 
     layer.mlp.router.weight.data.copy_(hf_layer.block_sparse_moe.gate.weight)
 
-    mcore_experts = layer.mlp.experts.local_experts
+    mcore_experts = layer.mlp.experts
     hf_experts = hf_layer.block_sparse_moe.experts
     for expert_idx in range(args.num_experts):
-        mcore_experts[expert_idx].linear_fc1.weight.data.copy_(
+        getattr(mcore_experts.linear_fc1, f'weight{expert_idx}').data.copy_(
             torch.cat([
-                hf_experts[expert_idx].w1.weight,
-                hf_experts[expert_idx].w3.weight
+                getattr(hf_experts, str(expert_idx)).w1.weight,
+                getattr(hf_experts, str(expert_idx)).w3.weight
             ], dim=0)
         )
-        mcore_experts[expert_idx].linear_fc2.weight.data.copy_(
-            hf_experts[expert_idx].w2.weight
+        getattr(mcore_experts.linear_fc2, f'weight{expert_idx}').data.copy_(
+            getattr(hf_experts, str(expert_idx)).w2.weight
         )
 
 def set_layer_state(args, model, hf_model, layer_idx):
@@ -257,6 +258,7 @@ def _load_checkpoint(queue, args):
     md.linear_bias = margs.add_bias_linear
     md.norm_has_bias = False
     md.swiglu = margs.swiglu
+    md.qkv_bias = False
     md.previous_tensor_parallel_size = margs.tensor_model_parallel_size
     md.previous_pipeline_parallel_size = margs.pipeline_model_parallel_size
     md.true_vocab_size = margs.vocab_size # skips padding in saver
@@ -304,16 +306,22 @@ def _load_checkpoint(queue, args):
 
         # Grab all parallel tensors for this layer.
         layer = model.decoder.layers[layer_idx]
-        experts = layer.mlp.experts.local_experts
+        experts = layer.mlp.experts
 
         message["router weight"] = layer.mlp.router.weight.data
         if md.swiglu:
-            chunked_mlp_l0_weight =  [torch.chunk(local_expert.linear_fc1.weight.data, 2, dim=0) for local_expert in experts]
-            message["mlp l0 weight W"] = torch.stack([local_weight[0] for local_weight in chunked_mlp_l0_weight], dim=0)
-            message["mlp l0 weight V"] = torch.stack([local_weight[1] for local_weight in chunked_mlp_l0_weight], dim=0)
+            chunked_mlp_l0_weight = []
+            for expert_idx in range(margs.num_experts):
+                expert_weight = getattr(experts.linear_fc1, f'weight{expert_idx}').data
+                w1, w2 = torch.chunk(expert_weight, 2, dim=0)
+                chunked_mlp_l0_weight.append((w1, w2))
+            message["mlp l0 weight W"] = torch.stack([w[0] for w in chunked_mlp_l0_weight], dim=0)
+            message["mlp l0 weight V"] = torch.stack([w[1] for w in chunked_mlp_l0_weight], dim=0)
         else:
-            message["mlp l0 weight"] = torch.stack([local_expert.linear_fc1.weight.data for local_expert in experts])
-        message["mlp l1 weight"] = torch.stack([local_expert.linear_fc2.weight.data for local_expert in experts], dim=0)
+            expert_weights = [getattr(experts.linear_fc1, f'weight{i}').data for i in range(margs.num_experts)]
+            message["mlp l0 weight"] = torch.stack(expert_weights)
+        expert_weights = [getattr(experts.linear_fc2, f'weight{i}').data for i in range(margs.num_experts)]
+        message["mlp l1 weight"] = torch.stack(expert_weights, dim=0)
 
         queue_put(f"transformer layer {layer_idx}", message)
 

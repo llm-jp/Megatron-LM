@@ -7,6 +7,269 @@ from importlib.metadata import version
 from packaging.version import Version as PkgVersion
 
 from schema_core import get_model_schema
+from setter import ModelSetter
+from utils import get_mcore_transformer_block_key, print_memory_usage
+
+
+class MCoreSetter(ModelSetter):
+
+    transformer_block_key = None
+
+    @classmethod
+    def get_transformer_block(cls, model):
+        return getattr(model, cls.transformer_block_key)
+
+    @classmethod
+    def has_position_embeddings(cls, model):
+        return hasattr(model.embedding, "position_embeddings")
+
+    @classmethod
+    def set_embeddings(
+        cls,
+        model,
+        word=None,
+        pos=None,
+    ):
+        cls.set_tensor(model.embedding.word_embeddings.weight, word)
+        if pos is not None:
+            cls.set_tensor(model.embedding.position_embeddings.weight, pos)
+
+    @classmethod
+    def set_final_norm(
+        cls,
+        model,
+        weight=None,
+        bias=None,
+    ):
+        block = cls.get_transformer_block(model)
+        cls.set_tensor(block.final_layernorm.weight, weight)
+        if bias is not None:
+            cls.set_tensor(block.final_layernorm.bias, bias)
+
+    @classmethod
+    def set_output_word_embeddings(
+        cls,
+        model,
+        emb=None,
+    ):
+        cls.set_tensor(model.output_layer.weight, emb)
+
+    @classmethod
+    def set_output_layer(
+        cls,
+        model,
+        weight=None,
+    ):
+        cls.set_tensor(model.output_layer.weight, weight)
+
+    @classmethod
+    def set_pooler(
+        cls,
+        model,
+        weight=None,
+        bias=None,
+    ):
+        cls.set_tensor(model.pooler.dense.weight, weight)
+        if bias is not None:
+            cls.set_tensor(model.pooler.dense.bias, bias)
+
+    @classmethod
+    def set_lm_head(
+        cls,
+        model,
+        dense_weight=None,
+        dense_bias=None,
+        norm_weight=None,
+        norm_bias=None,
+    ):
+
+        cls.set_tensor(model.lm_head.dense.weight, dense_weight)
+        if dense_bias is not None:
+            cls.set_tensor(model.lm_head.dense.bias, dense_bias)
+
+        cls.set_tensor(model.lm_head.layer_norm.weight, norm_weight)
+        if norm_bias is not None:
+            cls.set_tensor(model.lm_head.layer_norm.bias, norm_bias)
+
+    @classmethod
+    def set_binary_head(
+        cls,
+        model,
+        weight=None,
+        bias=None,
+    ):
+        cls.set_tensor(model.binary_head.weight, weight)
+        if bias is not None:
+            cls.set_tensor(model.binary_head.bias, bias)
+
+
+class MCoreLocalSetter(MCoreSetter):
+
+    @classmethod
+    def set_layer(
+        cls,
+        model,
+        layer_idx,
+        self_attn_norm_weight=None,
+        self_attn_norm_bias=None,
+        self_attn_qkv_weight=None,
+        self_attn_qkv_bias=None,
+        self_attn_proj_weight=None,
+        self_attn_proj_bias=None,
+        mlp_norm_weight=None,
+        mlp_norm_bias=None,
+        mlp_fc1_weight=None,
+        mlp_fc1_bias=None,
+        mlp_fc2_weight=None,
+        mlp_fc2_bias=None,
+    ):
+
+        block = cls.get_transformer_block(model)
+        l = block.layers[layer_idx]
+
+        # Self attention.
+        cls.set_tensor(l.input_layernorm.weight, self_attn_norm_weight)
+        if self_attn_norm_bias is not None:
+            cls.set_tensor(l.input_layernorm.bias, self_attn_norm_bias)
+
+        cls.set_tensor(l.self_attention.linear_qkv.weight, self_attn_qkv_weight)
+        if self_attn_qkv_bias is not None:
+            cls.set_tensor(l.self_attention.linear_qkv.bias, self_attn_qkv_bias)
+
+        cls.set_tensor(l.self_attention.linear_proj.weight, self_attn_proj_weight)
+        if self_attn_proj_bias is not None:
+            cls.set_tensor(l.self_attention.linear_proj.bias, self_attn_proj_bias)
+
+        # MLP.
+        cls.set_tensor(l.pre_mlp_layernorm.weight, mlp_norm_weight)
+        if mlp_norm_bias is not None:
+            cls.set_tensor(l.pre_mlp_layernorm.bias, mlp_norm_bias)
+
+        cls.set_tensor(l.mlp.linear_fc1.weight, mlp_fc1_weight)
+        if mlp_fc1_bias is not None:
+            cls.set_tensor(l.mlp.linear_fc1.bias, mlp_fc1_bias)
+
+        cls.set_tensor(l.mlp.linear_fc2.weight, mlp_fc2_weight)
+        if mlp_fc2_bias is not None:
+            cls.set_tensor(l.mlp.linear_fc2.bias, mlp_fc2_bias)
+
+
+class MCoreTESetter(MCoreSetter):
+
+    @classmethod
+    def set_layer(
+        cls,
+        model,
+        layer_idx,
+        self_attn_norm_weight=None,
+        self_attn_norm_bias=None,
+        self_attn_qkv_weight=None,
+        self_attn_qkv_bias=None,
+        self_attn_proj_weight=None,
+        self_attn_proj_bias=None,
+        mlp_norm_weight=None,
+        mlp_norm_bias=None,
+        mlp_fc1_weight=None,
+        mlp_fc1_bias=None,
+        mlp_fc2_weight=None,
+        mlp_fc2_bias=None,
+    ):
+
+        block = cls.get_transformer_block(model)
+        l = block.layers[layer_idx]
+
+        # Self attention.
+        cls.set_tensor(l.self_attention.linear_qkv.layer_norm_weight, self_attn_norm_weight)
+        if self_attn_norm_bias is not None:
+            cls.set_tensor(l.self_attention.linear_qkv.layer_norm_bias, self_attn_norm_bias)
+
+        cls.set_tensor(l.self_attention.linear_qkv.weight, self_attn_qkv_weight)
+        if self_attn_qkv_bias is not None:
+            cls.set_tensor(l.self_attention.linear_qkv.bias, self_attn_qkv_bias)
+
+        cls.set_tensor(l.self_attention.linear_proj.weight, self_attn_proj_weight)
+        if self_attn_proj_bias is not None:
+            cls.set_tensor(l.self_attention.linear_proj.bias, self_attn_proj_bias)
+
+        # MLP.
+        cls.set_tensor(l.mlp.linear_fc1.layer_norm_weight, mlp_norm_weight)
+        if mlp_norm_bias is not None:
+            cls.set_tensor(l.mlp.linear_fc1.layer_norm_bias, mlp_norm_bias)
+
+        cls.set_tensor(l.mlp.linear_fc1.weight, mlp_fc1_weight)
+        if mlp_fc1_bias is not None:
+            cls.set_tensor(l.mlp.linear_fc1.bias, mlp_fc1_bias)
+
+        cls.set_tensor(l.mlp.linear_fc2.weight, mlp_fc2_weight)
+        if mlp_fc2_bias is not None:
+            cls.set_tensor(l.mlp.linear_fc2.bias, mlp_fc2_bias)
+
+class MCoreMoETESetter(MCoreSetter):
+
+    @classmethod
+    def set_layer(
+        cls,
+        model,
+        layer_idx,
+        router_weight=None,
+        self_attn_norm_weight=None,
+        self_attn_norm_bias=None,
+        self_attn_qkv_weight=None,
+        self_attn_qkv_bias=None,
+        self_attn_proj_weight=None,
+        self_attn_proj_bias=None,
+        mlp_norm_weight=None,
+        mlp_norm_bias=None,
+        mlp_fc1_weight=None,
+        mlp_fc1_bias=None,
+        mlp_fc2_weight=None,
+        mlp_fc2_bias=None,
+    ):
+
+        block = cls.get_transformer_block(model)
+        l = block.layers[layer_idx]
+
+        # Self attention.
+        cls.set_tensor(l.self_attention.linear_qkv.layer_norm_weight, self_attn_norm_weight)
+        if self_attn_norm_bias is not None:
+            cls.set_tensor(l.self_attention.linear_qkv.layer_norm_bias, self_attn_norm_bias)
+        cls.set_tensor(l.self_attention.linear_qkv.weight, self_attn_qkv_weight)
+        if self_attn_qkv_bias is not None:
+            cls.set_tensor(l.self_attention.linear_qkv.bias, self_attn_qkv_bias)
+        cls.set_tensor(l.self_attention.linear_proj.weight, self_attn_proj_weight)
+        if self_attn_proj_bias is not None:
+            cls.set_tensor(l.self_attention.linear_proj.bias, self_attn_proj_bias)
+
+        # MLP.
+        cls.set_tensor(l.pre_mlp_layernorm.weight, mlp_norm_weight)
+        if model.config.normalization == "LayerNorm":
+            cls.set_tensor(l.pre_mlp_layernorm.bias, mlp_norm_bias)
+
+        cls.set_tensor(l.mlp.router.weight, router_weight)
+
+        for expert_idx in range(len(mlp_fc1_weight)):
+            cls.set_tensor(
+                getattr(l.mlp.experts.linear_fc1, f'weight{expert_idx}'),
+                mlp_fc1_weight[expert_idx]
+            )
+            cls.set_tensor(
+                getattr(l.mlp.experts.linear_fc2, f'weight{expert_idx}'),
+                mlp_fc2_weight[expert_idx]
+            )
+
+
+def get_model_setter(model_type, transformer_impl, num_experts=0):
+    if num_experts is not None and num_experts > 0:
+        # Only support TE setter for MOE
+        assert transformer_impl == "transformer_engine"
+        setter = MCoreMoETESetter
+    else:
+        setter = {
+            "local" : MCoreLocalSetter,
+            "transformer_engine" : MCoreTESetter,
+        }[transformer_impl]
+    setter.transformer_block_key = get_mcore_transformer_block_key(model_type)
+    return setter
 
 
 def add_arguments(parser):

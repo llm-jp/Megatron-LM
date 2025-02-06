@@ -216,6 +216,27 @@ def get_start_time_from_progress_log():
         start_num_floating_point_operations
 
 
+def is_save_iteration(iteration: int) -> bool:
+    """Check if we have to save a checkpoint upon finishing the specified step.
+    Args:
+        iteration: Training step.
+    Returns:
+        True if we should save checkpoint, False otherwise.
+    """
+    if iteration < 10:
+        # 0, 1, ..., 9
+        return True
+    if iteration < 100:
+        # 10, 20, ..., 90
+        return iteration % 10 == 0
+    if iteration < 10000:
+        # 100, 200, ..., 9900
+        return iteration % 100 == 0
+
+    # Rely on --save-interval option
+    return False
+
+
 def preprocess_common_state_dict(common_state_dict):
     import copy
     # Convert args key of type namespace to dictionary
@@ -413,7 +434,7 @@ def pretrain(
 
         print_datetime('after training is done')
 
-        if args.save and iteration != 0 and iteration % args.save_interval != 0:
+        if args.save and iteration != 0 and not is_save_iteration(iteration):
             save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
                             num_floating_point_operations_so_far, checkpointing_context,
                             train_data_iterator=train_data_iterator,
@@ -1592,7 +1613,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                        optimizer,
                        opt_param_scheduler,
                        config)
-        if should_checkpoint:
+        if should_checkpoint or is_save_iteration(iteration):
             save_checkpoint_and_time(iteration, model, optimizer,
                                      opt_param_scheduler,
                                      num_floating_point_operations_so_far,

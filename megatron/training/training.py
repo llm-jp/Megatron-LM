@@ -223,6 +223,9 @@ def is_save_iteration(iteration: int) -> bool:
     Returns:
         True if we should save checkpoint, False otherwise.
     """
+    if iteration < 1:
+        # Don't save initiali checkpoint (due to inconsistency of optimizers)
+        return False
     if iteration < 10:
         # 0, 1, ..., 9
         return True
@@ -233,8 +236,8 @@ def is_save_iteration(iteration: int) -> bool:
         # 100, 200, ..., 9900
         return iteration % 100 == 0
 
-    # Rely on --save-interval option
-    return False
+    # Save each 1000 steps.
+    return iteration % 1000 == 0
 
 
 def preprocess_common_state_dict(common_state_dict):
@@ -1392,8 +1395,7 @@ def checkpoint_and_decide_exit(model, optimizer, opt_param_scheduler, iteration,
             return True
 
     # Regular save (persistent and non-persistent).
-    if args.save and args.save_interval and \
-        iteration % args.save_interval == 0:
+    if args.save and is_save_iteration(iteration):
         save_checkpoint_and_time(iteration, model, optimizer,
                                  opt_param_scheduler,
                                  num_floating_point_operations_so_far,
@@ -1613,7 +1615,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                        optimizer,
                        opt_param_scheduler,
                        config)
-        if should_checkpoint or is_save_iteration(iteration):
+        if should_checkpoint:
             save_checkpoint_and_time(iteration, model, optimizer,
                                      opt_param_scheduler,
                                      num_floating_point_operations_so_far,

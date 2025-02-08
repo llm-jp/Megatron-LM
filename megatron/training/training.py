@@ -196,6 +196,30 @@ def get_start_time_from_progress_log():
         start_num_floating_point_operations
 
 
+def is_save_iteration(iteration: int) -> bool:
+    """Check if we have to save a checkpoint upon finishing the specified step.
+    Args:
+        iteration: Training step.
+    Returns:
+        True if we should save checkpoint, False otherwise.
+    """
+    if iteration < 1:
+        # Don't save initiali checkpoint (due to inconsistency of optimizers)
+        return False
+    if iteration < 10:
+        # 0, 1, ..., 9
+        return True
+    if iteration < 100:
+        # 10, 20, ..., 90
+        return iteration % 10 == 0
+    if iteration < 10000:
+        # 100, 200, ..., 9900
+        return iteration % 100 == 0
+
+    # Save each 1000 steps.
+    return iteration % 1000 == 0
+
+
 def pretrain(
     train_valid_test_dataset_provider,
     model_provider,
@@ -367,7 +391,7 @@ def pretrain(
 
         print_datetime('after training is done')
 
-        if args.save and iteration != 0 and iteration % args.save_interval != 0:
+        if args.save and iteration != 0 and is_save_iteration(iteration):
             save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
                             num_floating_point_operations_so_far, checkpointing_context,
                             train_data_iterator=train_data_iterator,
@@ -1464,8 +1488,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 exit = True
                 break
 
-        if args.save and args.save_interval and \
-           iteration % args.save_interval == 0:
+        if args.save and is_save_iteration(iteration):
             save_checkpoint_and_time(iteration, model, optimizer,
                                      opt_param_scheduler,
                                      num_floating_point_operations_so_far,

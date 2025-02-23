@@ -67,7 +67,7 @@ def save_checkpoint(queue: mp.Queue, args):
             exit(1)
         if name is not None and args.checking and val["name"] != name:
             val_name = val["name"]
-            print(f"Unexpected message. Expecting "{name}" but got "{val_name}". Exiting saver.")
+            print(f"Unexpected message. Expecting '{name}' but got '{val_name}'. Exiting saver.")
             exit(1)
         if name is not None:
             print(f"received {name}")

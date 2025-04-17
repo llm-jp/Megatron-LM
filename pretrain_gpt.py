@@ -130,6 +130,7 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
             rotary_base=args.rotary_base,
             rope_scaling=args.use_rope_scaling,
             mtp_block_spec=mtp_block_spec,
+            use_z_loss=args.use_z_loss,
         )
 
     return model

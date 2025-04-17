@@ -17,7 +17,8 @@ from .module import MegatronModule
 
 def post_language_model_processing(lm_output, labels, logit_weights,
                                    parallel_output,
-                                   fp16_lm_cross_entropy):
+                                   fp16_lm_cross_entropy,
+                                   z_loss_strength):
 
     # Output. Format [s b h]
     output = parallel_lm_logits(
@@ -33,9 +34,9 @@ def post_language_model_processing(lm_output, labels, logit_weights,
         labels = labels.transpose(0,1).contiguous()
         if fp16_lm_cross_entropy:
             assert output.dtype == torch.half
-            loss = tensor_parallel.vocab_parallel_cross_entropy(output, labels)
+            loss = tensor_parallel.vocab_parallel_cross_entropy(output, labels, z_loss_strength=z_loss_strength)
         else:
-            loss = tensor_parallel.vocab_parallel_cross_entropy(output.float(), labels)
+            loss = tensor_parallel.vocab_parallel_cross_entropy(output.float(), labels, z_loss_strength=z_loss_strength)
         
         # [s b] => [b, s]
         loss = loss.transpose(0,1).contiguous()
@@ -59,6 +60,10 @@ class GPTModel(MegatronModule):
         self.post_process = post_process
         self.fp16_lm_cross_entropy = args.fp16_lm_cross_entropy
         self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
+        if args.use_z_loss:
+            self.z_loss_strength = 1e-4
+        else:
+            self.z_loss_strength = 0.0
 
         self.language_model, self._language_model_key = get_language_model(
             config=config,
@@ -97,7 +102,8 @@ class GPTModel(MegatronModule):
                 lm_output, labels,
                 self.language_model.output_layer.weight if self.untie_embeddings_and_output_weights else self.shared_embedding_or_output_weight(),
                 self.parallel_output,
-                self.fp16_lm_cross_entropy)
+                self.fp16_lm_cross_entropy,
+                self.z_loss_strength)
         else:
             return lm_output
 

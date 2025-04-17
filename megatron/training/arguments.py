@@ -1809,6 +1809,9 @@ def _add_rerun_machine_args(parser):
                        'or to emit stats on variability of computations due to '
                        'non-deterministic algorithms.')
 
+    # NOTE: Added by LLM-jp
+    group.add_argument("--use-z-loss", action="store_true", help="use z-loss for supplement loss")
+
     return parser
 
 

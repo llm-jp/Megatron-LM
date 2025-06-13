@@ -184,6 +184,7 @@ def _set_wandb_writer(args):
             # Defaults to the save dir.
             save_dir = os.path.join(args.save, 'wandb')
         wandb_kwargs = {
+            'entity': args.wandb_entity,
             'dir': save_dir,
             'name': args.wandb_exp_name,
             'project': args.wandb_project,

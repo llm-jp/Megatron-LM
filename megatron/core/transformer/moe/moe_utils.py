@@ -710,7 +710,8 @@ def track_moe_metrics(
             # As a workaround, we log each scalar individually first, then we can create
             # a custom panel to manually group them to a single plot.
             if wandb_writer:
-                wandb_writer.log({f"{name}": loss_list.sum() / num_moe_layers}, iteration)
+                wandb_writer.log({f"lm-loss-training/{name}": loss_list.mean()}, iteration)
+                wandb_writer.log({f"{name}": loss_list.mean()}, iteration)
                 if per_layer_logging:
                     wandb_writer.log(
                         {

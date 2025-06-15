@@ -69,8 +69,8 @@ class GPTModel(LanguageModule):
         seq_len_interpolation_factor (Optional[float], optional):
             scale of linearly interpolating RoPE for longer sequences.
             The value must be a float larger than 1.0. Defaults to None.
-        use_z_loss (bool, optional):
-            Whether to use z loss. Defaults to False.
+        z_loss_strength (float, optional):
+            Strength of the z loss. Defaults to 0.0.
     """
 
     def __init__(
@@ -94,7 +94,7 @@ class GPTModel(LanguageModule):
         scatter_embedding_sequence_parallel: bool = True,
         seq_len_interpolation_factor: Optional[float] = None,
         mtp_block_spec: Optional[ModuleSpec] = None,
-        use_z_loss: bool = False,
+        z_loss_strength: float = 0.0,
     ) -> None:
         super().__init__(config=config)
 
@@ -131,11 +131,7 @@ class GPTModel(LanguageModule):
         self.mtp_block_spec = mtp_block_spec
         self.mtp_process = mtp_block_spec is not None
 
-        # When use_z_loss is True, z_loss_strength is set to 1e-4
-        if use_z_loss:
-            self.z_loss_strength = 1e-4
-        else:
-            self.z_loss_strength = 0.0
+        self.z_loss_strength = z_loss_strength
 
         if self.pre_process or self.mtp_process:
             self.embedding = LanguageModelEmbedding(

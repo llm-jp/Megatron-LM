@@ -1810,7 +1810,10 @@ def _add_rerun_machine_args(parser):
                        'non-deterministic algorithms.')
 
     # NOTE: Added by LLM-jp
-    group.add_argument("--use-z-loss", action="store_true", help="use z-loss for supplement loss")
+    group.add_argument('--z-loss-strength', type=float, default=0.0,
+                        help='Strength of the Z-loss regularization. '
+                        'If set to 0, Z-loss is not applied. '
+                        'If set to a positive value, Z-loss is applied with the given strength.')
 
     return parser
 

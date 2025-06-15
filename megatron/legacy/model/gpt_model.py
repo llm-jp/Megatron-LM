@@ -60,10 +60,7 @@ class GPTModel(MegatronModule):
         self.post_process = post_process
         self.fp16_lm_cross_entropy = args.fp16_lm_cross_entropy
         self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
-        if args.use_z_loss:
-            self.z_loss_strength = 1e-4
-        else:
-            self.z_loss_strength = 0.0
+        self.z_loss_strength = args.z_loss_strength
 
         self.language_model, self._language_model_key = get_language_model(
             config=config,

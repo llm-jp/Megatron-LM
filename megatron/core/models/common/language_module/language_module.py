@@ -23,12 +23,13 @@ class LanguageModule(MegatronModule):
     def __init__(self, config: TransformerConfig) -> None:
         super().__init__(config=config)
 
-    def compute_language_model_loss(self, labels: Tensor, logits: Tensor) -> Tensor:
+    def compute_language_model_loss(self, labels: Tensor, logits: Tensor, z_loss_strength: float = 0.0) -> Tensor:
         """Computes the language model loss (Cross entropy across vocabulary)
 
         Args:
             labels (Tensor): The labels of dimension [batch size, seq length]
             logits (Tensor): The final logits returned by the output layer of the transformer model
+            z_loss_strength (float): The strength of the z loss. Defaults to 0.0.
 
         Returns:
             Tensor: Loss tensor of dimensions [batch size, sequence_length]
@@ -36,9 +37,13 @@ class LanguageModule(MegatronModule):
         # [b s] => [s b]
         labels = labels.transpose(0, 1).contiguous()
         if self.config.cross_entropy_loss_fusion:
+            if z_loss_strength != 0.0:
+                raise NotImplementedError(
+                    "Z loss is not supported with fused vocab parallel cross entropy."
+                )
             loss = fused_vocab_parallel_cross_entropy(logits, labels)
         else:
-            loss = tensor_parallel.vocab_parallel_cross_entropy(logits, labels)
+            loss = tensor_parallel.vocab_parallel_cross_entropy(logits, labels, z_loss_strength=z_loss_strength)
 
         # [s b] => [b, s]
         loss = loss.transpose(0, 1).contiguous()

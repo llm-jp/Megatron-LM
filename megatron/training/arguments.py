@@ -1302,6 +1302,12 @@ def _add_training_args(parser):
                        help='Disables the Reduce-Scatter overlap with fprop GEMM.',
                        dest='tp_comm_split_rs')
 
+    # NOTE: Added by LLM-jp
+    group.add_argument('--z-loss-strength', type=float, default=0.0,
+                        help='Strength of the Z-loss regularization. '
+                        'If set to 0, Z-loss is not applied. '
+                        'If set to a positive value, Z-loss is applied with the given strength.')
+
     return parser
 
 

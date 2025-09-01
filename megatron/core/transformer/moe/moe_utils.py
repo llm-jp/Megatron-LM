@@ -714,6 +714,7 @@ def track_moe_metrics(
     num_layers: Optional[int] = None,
     moe_layer_freq: Optional[Union[int, List[int]]] = None,
     mtp_num_layers: Optional[int] = None,
+    wandb_stats=None
 ):
     """Track the MoE metrics for logging."""
     # Aux loss logging
@@ -744,7 +745,7 @@ def track_moe_metrics(
     if mtp_num_layers is not None:
         num_moe_layers += mtp_num_layers
 
-    if writer is not None:
+    if wandb_writer is not None:
         aux_losses = {k: v['values'].float() * loss_scale for k, v in tracker.items()}
         for name, loss_list in aux_losses.items():
             if total_loss_dict is not None:
@@ -756,26 +757,33 @@ def track_moe_metrics(
             # currently when using add_scalars,
             # torch.utils.add_scalars makes each timer its own run, which
             # polutes the runs list, so we just add each as a scalar
-            writer.add_scalar(name, loss_list.sum() / num_moe_layers, iteration)
-            if per_layer_logging:
-                for i, loss in enumerate(loss_list.tolist()):
-                    writer.add_scalar(f"moe/{name}_layer_{i}", loss, iteration)
+            if writer is not None:
+                writer.add_scalar(name, loss_list.sum() / num_moe_layers, iteration)
+                if per_layer_logging:
+                    for i, loss in enumerate(loss_list.tolist()):
+                        writer.add_scalar(f"moe/{name}_layer_{i}", loss, iteration)
 
             # W&B logging lacks support for logging multiple scalars simultaneously.
             # As a workaround, we log each scalar individually first, then we can create
             # a custom panel to manually group them to a single plot.
             if wandb_writer:
-                wandb_writer.log({f"{name}": loss_list.sum() / num_moe_layers}, iteration)
+                wandb_stats[f"lm-loss-training/{name}"] = loss_list.mean()
+                if writer is not None:
+                    wandb_writer.log({f"{name}": loss_list.sum() / num_moe_layers}, iteration)
                 if per_layer_logging:
-                    wandb_writer.log(
-                        {
-                            f"moe/{name}_layer_{i}": loss
-                            for i, loss in enumerate(loss_list.tolist())
-                        },
-                        iteration,
-                    )
+                    if writer is not None:
+                        wandb_writer.log(
+                            {
+                                f"moe/{name}_layer_{i}": loss
+                                for i, loss in enumerate(loss_list.tolist())
+                            },
+                            iteration,
+                        )
+                    for i, loss in enumerate(loss_list.tolist()):
+                        wandb_stats[f"moe/{name}_layer_{i}"] = loss
 
     clear_aux_losses_tracker()
+    return wandb_stats
 
 
 def get_updated_expert_bias(tokens_per_expert, expert_bias, expert_bias_update_rate):

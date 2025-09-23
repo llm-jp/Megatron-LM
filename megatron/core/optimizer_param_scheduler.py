@@ -126,8 +126,10 @@ class OptimizerParamScheduler:
             param_group (dict): parameter group from the optimizer.
         """
 
-        max_lr = param_group.get('max_lr', self.max_lr)
-        min_lr = param_group.get('min_lr', self.min_lr)
+        # NOTE(odashi):
+        # Hotfix for https://github.com/NVIDIA/Megatron-LM/issues/1138
+        max_lr = self.max_lr
+        min_lr = self.min_lr
 
         # Use linear warmup for the initial part.
         if self.lr_warmup_steps > 0 and self.num_steps <= self.lr_warmup_steps:
@@ -174,6 +176,12 @@ class OptimizerParamScheduler:
                     coeff = 0.5 * (math.cos(math.pi * wsd_decay_ratio) + 1.0)
                 elif self.lr_wsd_decay_style == "exponential":
                     coeff = (2.0 * math.pow(0.5, wsd_decay_ratio)) - 1.0
+                elif self.lr_wsd_decay_style == "minus_sqrt":
+                    coeff = 1.0 - math.sqrt(wsd_decay_ratio)
+                else:
+                    raise Exception(
+                        f'{self.lr_wsd_decay_style} WSD decay style is not supported.'
+                    )
         else:
             raise Exception(f'{self.lr_decay_style} decay style is not supported.')
 

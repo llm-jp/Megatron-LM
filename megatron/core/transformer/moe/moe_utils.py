@@ -763,7 +763,7 @@ def track_moe_metrics(
     num_layers: Optional[int] = None,
     moe_layer_freq: Optional[Union[int, List[int]]] = None,
     mtp_num_layers: Optional[int] = None,
-    wandb_stats=None
+    wandb_stats=None,
 ):
     """Track the MoE metrics for logging."""
     # Aux loss logging

@@ -1514,6 +1514,8 @@ def training_log(
                 "mem-max-allocated-bytes", mem_stats["allocated_bytes.all.peak"], iteration
             )
             writer.add_scalar("mem-allocated-count", mem_stats["allocation.all.current"], iteration)
+    import typing
+    wandb_stats: dict[str, typing.Any] = {}
     if args.num_experts is not None:
         moe_loss_scale = 1 / get_num_microbatches()
         track_names = []
@@ -1537,12 +1539,32 @@ def training_log(
             num_layers=args.num_layers,
             moe_layer_freq=args.moe_layer_freq,
             mtp_num_layers=args.mtp_num_layers,
+            wandb_stats=wandb_stats,
         )
     if args.mtp_num_layers is not None:
         mtp_loss_scale = 1 / get_num_microbatches()
         MTPLossLoggingHelper.track_mtp_metrics(
             mtp_loss_scale, iteration, writer, wandb_writer, total_loss_dict
         )
+    if wandb_writer and (iteration % args.tensorboard_log_interval == 0) and is_last_rank():
+        wandb_stats["utils/steps-vs-samples"] = args.consumed_train_samples
+
+        wandb_stats["utils/learning-rate"] = learning_rate
+        wandb_stats["utils/batch-size"] = batch_size
+
+        for key in loss_dict:
+            wandb_stats[f"lm-loss-training/{key}"] = loss_dict[key]
+            wandb_stats[f"lm-loss-training/{key}_ppl"] = math.exp(total_loss_dict[key].item())
+
+        wandb_stats["others/loss-scale"] = loss_scale
+        wandb_stats["others/grad-norm"] = grad_norm
+        if hasattr(args, 'seq_length'):
+            wandb_stats["others/seq_length"] = args.seq_length
+        if hasattr(args, 'num_experts'):
+            wandb_stats["others/num_experts"] = args.num_experts
+        if hasattr(args, 'moe_router_topk'):
+            wandb_stats["others/moe_router_topk"] = args.moe_router_topk
+
     if iteration % args.log_interval == 0:
         if args.record_memory_history and is_last_rank():
             snapshot = torch.cuda.memory._snapshot()
@@ -1559,6 +1581,14 @@ def training_log(
         )
 
         one_logger_utils.track_e2e_metrics(args.log_throughput, throughput)
+        tokens_per_sec = args.global_batch_size *  args.seq_length / elapsed_time_per_iteration
+        wandb_stats["stats/tflops"] = throughput
+        wandb_stats["stats/1_iteration_time"] = elapsed_time_per_iteration
+        wandb_stats["stats/tokens_per_sec"] = tokens_per_sec
+        wandb_stats["stats/tokens_per_sec_per_gpu"] = tokens_per_sec / args.world_size
+
+        if wandb_writer and is_last_rank():
+            wandb_writer.log(wandb_stats, step=iteration)
 
         if args.log_timers_to_tensorboard:
             if writer:

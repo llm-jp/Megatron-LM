@@ -627,15 +627,9 @@ def is_save_iteration(iteration: int) -> bool:
     Returns:
         True if we should save checkpoint, False otherwise.
     """
-    if iteration < 1:
-        # Don't save initiali checkpoint (due to inconsistency of optimizers)
-        return False
-    if iteration < 10:
-        # 0, 1, ..., 9
-        return True
     if iteration < 100:
-        # 10, 20, ..., 90
-        return iteration % 10 == 0
+        # Don't save initial checkpoint (due to inconsistency of optimizers)
+        return False
     if iteration < 10000:
         # 100, 200, ..., 9900
         return iteration % 100 == 0

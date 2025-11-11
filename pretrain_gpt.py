@@ -193,6 +193,7 @@ def model_provider(
             rope_scaling=args.use_rope_scaling,
             mtp_block_spec=mtp_block_spec,
             vp_stage=vp_stage,
+            z_loss_strength=args.z_loss_strength,
         )
 
     return model

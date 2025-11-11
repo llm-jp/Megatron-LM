@@ -1126,7 +1126,7 @@ def core_transformer_config_from_args(args, config_class=None):
 
     if args.multi_latent_attention:
         config_class = MLATransformerConfig
-    
+
     if args.heterogeneous_layers_config_path is not None:
         assert not args.multi_latent_attention, "Multi latent attention with heterogeneous layers is not supported."
         config_class = HeterogeneousTransformerConfig
@@ -2010,6 +2010,12 @@ def _add_rerun_machine_args(parser):
                        help='Use re-run engine to validate results (default) '
                        'or to emit stats on variability of computations due to '
                        'non-deterministic algorithms.')
+
+    # NOTE: Added by LLM-jp
+    group.add_argument('--z-loss-strength', type=float, default=0.0,
+                        help='Strength of the Z-loss regularization. '
+                        'If set to 0, Z-loss is not applied. '
+                        'If set to a positive value, Z-loss is applied with the given strength.')
 
     return parser
 

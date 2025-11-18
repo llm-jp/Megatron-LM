@@ -2444,13 +2444,20 @@ def train(
                 decoupled_learning_rate = param_group['lr']
             else:
                 learning_rate = param_group['lr']
-        report_memory_flag = training_log(loss_dict, total_loss_dict,
-                                          learning_rate,
-                                          decoupled_learning_rate,
-                                          iteration, loss_scale,
-                                          report_memory_flag, skipped_iter,
-                                          grad_norm, params_norm, num_zeros_in_grad,
-                                          optimizer)
+        report_memory_flag = training_log(
+            loss_dict,
+            total_loss_dict,
+            learning_rate,
+            decoupled_learning_rate,
+            iteration,
+            loss_scale,
+            report_memory_flag,
+            skipped_iter,
+            grad_norm,
+            params_norm,
+            num_zeros_in_grad,
+            optimizer,
+        )
 
         # Evaluation.
         if args.eval_interval and iteration % args.eval_interval == 0 and args.do_valid:

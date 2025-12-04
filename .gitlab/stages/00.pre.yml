@@ -6,10 +6,10 @@ include:
     - if: $CI_PIPELINE_SOURCE == 'main'
       allow_failure: true
       when: always
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED != "true"
+    - if: $CI_MERGE_REQUEST_EVENT_TYPE == 'merged_result' && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED != "true"
       allow_failure: true
       when: always
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_MERGE_REQUEST_EVENT_TYPE == 'merged_result'
       when: always
     - when: never
   stage: .pre
@@ -59,6 +59,7 @@ pre:create_ci_branches:
       - branch: ci-nightly
       - branch: ci-weekly
       - branch: ci-pre-release
+      - branch: ci-review-reminder
   tags:
     - arch/amd64
     - env/prod
@@ -81,7 +82,12 @@ pre:label_merge_request:
   extends: [.pre_rules]
   image: golang:1.22
   tags:
-    - mcore-docker-node-small
+    - arch/amd64
+    - env/prod
+    - origin/jet-fleet
+    - owner/jet-core
+    - purpose/utility
+    - team/megatron
   before_script:
     - git clone -b nv https://${GITLAB_ENDPOINT}/okoenig/gitlab-mr-labeler.git
     - cd gitlab-mr-labeler
@@ -214,13 +220,20 @@ pre:check_milestone:
       MILESTONE=$(curl --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN_MCORE}" --url "https://${GITLAB_ENDPOINT}/api/v4/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}" | jq '.milestone')
     - |
       if [[ "$MILESTONE" == "null" ]]; then
-        echo Please assign a Milestone to this MR!
-        exit 1
+        LATEST_MILESTONE=$(curl --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN_MCORE}" --url "https://${GITLAB_ENDPOINT}/api/v4/projects/${CI_PROJECT_ID}/milestones?state=active&order_by=due_date&sort=desc" | jq '.[0].id')
+        curl --request PUT --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN_MCORE}" --url "https://${GITLAB_ENDPOINT}/api/v4/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}" --data "milestone_id=${LATEST_MILESTONE}"
+        echo "Applied latest milestone (ID: ${LATEST_MILESTONE}) to this MR"
       fi
 
 pre:check_status_of_main:
   extends: [.pre_rules]
   image: python:3.10
+  timeout: 7 days
+  variables:
+    KUBERNETES_SERVICE_MEMORY_REQUEST: 32Gi
+    KUBERNETES_SERVICE_MEMORY_LIMIT: 32Gi
+    KUBERNETES_SERVICE_CPU_REQUEST: 8
+    KUBERNETES_SERVICE_CPU_LIMIT: 12
   tags:
     - arch/amd64
     - env/prod
@@ -228,7 +241,6 @@ pre:check_status_of_main:
     - owner/jet-core
     - purpose/utility
     - team/megatron
-  timeout: 7 days
   script:
     - env
     - pip install --no-cache-dir python-gitlab click

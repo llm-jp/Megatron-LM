@@ -3,6 +3,7 @@ import filecmp
 import logging
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Tuple, Union
@@ -158,14 +159,18 @@ class TestLocalCheckpointing:
         )  # FIXME: fails with additional arguments (e.g.,'weight_decay')
         if use_ramdisk:
             tmp_path_dist_ckpt = Path("/dev/shm")
-        with TempNamedDir(
-            tmp_path_dist_ckpt / "test_local", sync=True
-        ) as local_ckpt_dir, mock.patch(
-            'megatron.training.checkpointing.get_args', new=lambda: mock_args
-        ), mock.patch(
-            'megatron.training.async_utils.get_args', new=lambda: mock_args
-        ), mock.patch(
-            "megatron.training.checkpointing.update_num_microbatches"
+
+        original_empty = torch.empty
+
+        def deterministic_empty(*args, **kwargs):
+            return original_empty(*args, **kwargs).zero_()
+
+        with (
+            TempNamedDir(tmp_path_dist_ckpt / "test_local", sync=True) as local_ckpt_dir,
+            mock.patch('megatron.training.checkpointing.get_args', new=lambda: mock_args),
+            mock.patch('megatron.training.async_utils.get_args', new=lambda: mock_args),
+            mock.patch("megatron.training.checkpointing.update_num_microbatches"),
+            mock.patch('torch.empty', new=deterministic_empty),
         ):
             local_ckpt_dir = local_ckpt_dir / "subdir"  # Test handling of non-existent directories
             init_basic_mock_args(mock_args, tp, pp)
@@ -173,6 +178,7 @@ class TestLocalCheckpointing:
             mock_args.non_persistent_ckpt_type = 'local'
             mock_args.non_persistent_local_ckpt_algo = algo
             mock_args.async_save = async_save
+            mock_args.ckpt_fully_parallel_save = True  # ensure proper sharding_type is set
             checkpointing_context = {
                 'local_checkpoint_manager': LocalCheckpointManager(local_ckpt_dir)
             }
@@ -233,6 +239,7 @@ class TestLocalCheckpointing:
             )
             if async_save:
                 maybe_finalize_async_save(True)
+            time.sleep(0.01)  # Allow sufficient time for async cleanup to complete
             assert not ckpt_path.exists()
             ckpt_id = checkpointing_context['local_checkpoint_manager']._ckpt_id(2)
             ckpt_path = checkpointing_context['local_checkpoint_manager']._local_ckpt_path_from_id(
@@ -258,16 +265,13 @@ class TestLocalCheckpointing:
             tmp_path_dist_ckpt = Path("/dev/shm")
 
         def test_save_wrapper(save_wrapper, subdir):
-            with TempNamedDir(tmp_path_dist_ckpt / subdir, sync=True) as local_ckpt_dir, mock.patch(
-                'megatron.training.checkpointing.get_args', new=lambda: mock_args
-            ), mock.patch(
-                'megatron.training.async_utils.get_args', new=lambda: mock_args
-            ), mock.patch(
-                "megatron.training.checkpointing.update_num_microbatches"
-            ), mock.patch.object(
-                LocalCheckpointManager, '_save', new=save_wrapper
-            ), caplog.at_level(
-                logging.INFO
+            with (
+                TempNamedDir(tmp_path_dist_ckpt / subdir, sync=True) as local_ckpt_dir,
+                mock.patch('megatron.training.checkpointing.get_args', new=lambda: mock_args),
+                mock.patch('megatron.training.async_utils.get_args', new=lambda: mock_args),
+                mock.patch("megatron.training.checkpointing.update_num_microbatches"),
+                mock.patch.object(LocalCheckpointManager, '_save', new=save_wrapper),
+                caplog.at_level(logging.INFO),
             ):
 
                 local_ckpt_dir = (
@@ -278,6 +282,7 @@ class TestLocalCheckpointing:
                 mock_args.non_persistent_ckpt_type = 'local'
                 mock_args.non_persistent_local_ckpt_algo = algo
                 mock_args.async_save = async_save
+                mock_args.ckpt_fully_parallel_save = True  # ensure proper sharding_type is set
                 checkpointing_context = {
                     'local_checkpoint_manager': LocalCheckpointManager(local_ckpt_dir)
                 }

@@ -35,7 +35,7 @@ from ..dist_checkpointing.mapping import (
 )
 from ..dist_checkpointing.utils import extract_sharded_tensors_and_factories
 from ..distributed.param_and_grad_buffer import _ParamAndGradBuffer, partition_buckets
-from ..fp8_utils import is_float8tensor, quantize_param_shard
+from ..fp8_utils import dequantize_fp8_tensor, is_float8tensor, quantize_param_shard
 from ..transformer.module import MegatronModule
 from .grad_scaler import MegatronGradScaler
 from .optimizer import MixedPrecisionOptimizer, _zero_grad_group_helper
@@ -156,7 +156,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         reduce-scatter and all-gather.
         """
 
-        data_parallel_rank = torch.distributed.get_rank(param_and_grad_buffer.data_parallel_group)
+        data_parallel_rank = param_and_grad_buffer.data_parallel_group.rank()
         data_parallel_world_size = param_and_grad_buffer.data_parallel_group.size()
 
         bucket = param_and_grad_buffer.buckets[bucket_index]
@@ -335,33 +335,40 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                 if model_param.type() in ['torch.cuda.HalfTensor', 'torch.cuda.BFloat16Tensor']:
 
                     # Generate sharded model param.
-                    shard_model_param = model_param.detach().view(-1)[
-                        param_range.start : param_range.end
-                    ]
-                    tensor_parallel.copy_tensor_model_parallel_attributes(
-                        shard_model_param, model_param
-                    )
-                    if hasattr(model_param, 'shared'):
-                        shard_model_param.shared = model_param.shared
+                    if is_float8tensor(model_param) and config.fp8_recipe != "delayed":
+                        # MXFP8Tensor and BlockwiseQTensor don't support view(-1)
+                        shard_model_param = None
+                    else:
+                        shard_model_param = model_param.detach().view(-1)[
+                            param_range.start : param_range.end
+                        ]
+                        tensor_parallel.copy_tensor_model_parallel_attributes(
+                            shard_model_param, model_param
+                        )
+                        if hasattr(model_param, 'shared'):
+                            shard_model_param.shared = model_param.shared
 
                     # Generate main param.
-                    if not config.use_precision_aware_optimizer:
+                    if not config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
                         # If we use FP8 params to initialize FP32 main params (compared to using the
                         # bf16/fp16 params to initialize the main params), there will be a loss of
                         # precision at the beginning of training (this problem will not occur if the
                         # training is long enough or if the main params are loaded from a
                         # checkpoint).
-                        if is_float8tensor(model_param) and hasattr(
-                            model_param, 'get_high_precision_init_val'
-                        ):
-                            shard_main_param = (
-                                model_param.get_high_precision_init_val()
-                                .view(-1)[param_range.start : param_range.end]
-                                .clone()
-                                .to(shard_model_param.device)
-                                .float()
-                            )
-                            model_param.clear_high_precision_init_val()
+                        if is_float8tensor(model_param):
+                            if hasattr(model_param, 'get_high_precision_init_val'):
+                                shard_main_param = (
+                                    model_param.get_high_precision_init_val()
+                                    .view(-1)[param_range.start : param_range.end]
+                                    .clone()
+                                    .to(model_param.device)
+                                    .float()
+                                )
+                                model_param.clear_high_precision_init_val()
+                            else:
+                                shard_main_param = model_param.float().view(-1)[
+                                    param_range.start : param_range.end
+                                ]
                         else:
                             shard_main_param = shard_model_param.clone().float()
 
@@ -404,7 +411,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                     )
 
             # Update optimizer's params.
-            if not config.use_precision_aware_optimizer:
+            if not config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
                 group_range["orig_group"]["params"] = [
                     *shard_fp32_params_this_group,
                     *shard_fp32_from_float16_params_this_group,
@@ -584,9 +591,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
     def get_grad_stats_parallel_group(self) -> torch.distributed.ProcessGroup:
         """
         With the distributed optimizer, gradient statistics (num_zeros & norm) are reduced over
-        all ranks (versus only the model-parallel ranks with the non-distributed optimizer).
+        all ranks in the distributed optimizer instance (versus only the model-parallel ranks
+        with the non-distributed optimizer).
         """
-        return None
+        return getattr(self, 'grad_stats_parallel_group', None)
 
     def state_dict(self):
         """
@@ -714,13 +722,23 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
                             # Allocate dummy tensors.
                             numel = len(param_range_map["gbuf_world"])
-                            init_shard = lambda: torch.empty(
-                                (numel,), dtype=torch.float32, device=torch.cuda.current_device()
+                            init_shard = lambda dtype=torch.float32: torch.empty(
+                                (numel,), dtype=dtype, device=torch.cuda.current_device()
                             )
 
-                            tensors = {"exp_avg": init_shard(), "exp_avg_sq": init_shard()}
-                            if self.config.use_precision_aware_optimizer:
-                                tensors["master_param"] = init_shard()
+                            # For precision_aware_optimizer, the empty tensors should also be
+                            #  initialized with the correct dtype.
+                            tensors = {
+                                "exp_avg": init_shard(self.config.exp_avg_dtype),
+                                "exp_avg_sq": init_shard(self.config.exp_avg_sq_dtype),
+                            }
+                            if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
+                                if self.config.store_param_remainders and self.config.bf16:
+                                    tensors["master_param"] = init_shard(torch.int16)
+                                else:
+                                    tensors["master_param"] = init_shard(
+                                        self.config.main_params_dtype
+                                    )
                             state_dict_state.append((state_order, tensors))
 
             # Sort by state order (see method docstring for details).
@@ -742,7 +760,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                 s["step"] = step
         elif isinstance(self.optimizer, HybridDeviceOptimizer):
             # Handle Torch AdamW special case, which, unlike FusedAdam, Torch AdamW
-            # has an extra optimizer state “step”.
+            # has an extra optimizer state "step".
             steps = list(
                 set([g["step"] for g in state_dict["optimizer"]["param_groups"] if "step" in g])
             )
@@ -814,7 +832,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
             return {"param": main_param, **self.optimizer.state[main_param]}
 
         group_index, group_order = self.model_param_group_index_map[model_param]
-        if self.config.use_precision_aware_optimizer:
+        if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
             sharded_model_param = self.optimizer.param_groups[group_index]["params"][group_order]
             tensors = {}
             for k in self.optimizer.state[sharded_model_param]:
@@ -857,7 +875,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
             return
 
         group_index, group_order = self.model_param_group_index_map[model_param]
-        if self.config.use_precision_aware_optimizer:
+        if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
             sharded_model_param = self.optimizer.param_groups[group_index]["params"][group_order]
             for k, v in tensors.items():
                 if isinstance(self.optimizer, HybridDeviceOptimizer):
@@ -952,7 +970,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         # Data parallelism variables.
         assert self.data_parallel_group_gloo is not None
         data_parallel_world_size = self.data_parallel_group_gloo.size()
-        data_parallel_rank = torch.distributed.get_rank(self.data_parallel_group_gloo)
+        data_parallel_rank = self.data_parallel_group_gloo.rank()
         data_parallel_group_gloo = self.data_parallel_group_gloo
         data_parallel_global_ranks = torch.distributed.get_process_group_ranks(
             self.data_parallel_group_gloo
@@ -1055,20 +1073,32 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         """
 
         state_dict = self.get_parameter_state_dp_zero()
-        if torch.distributed.get_rank(self.data_parallel_group) == 0:
+        if self.data_parallel_group.rank() == 0:
             torch.save(state_dict, filename)
 
     def sharded_state_dict(
         self,
         model_sharded_state_dict: ShardedStateDict,
         is_loading: bool = False,
-        sharding_type: str = 'fully_sharded_model_space',
+        sharding_type: Optional[str] = None,
+        metadata: Optional[dict] = None,
     ):
         """
         Chooses between 3 param state sharding implementations as requested by `sharding_type`.
 
         Regular state dict parameters are saved on DP rank 0 and loaded on all ranks.
         """
+        if sharding_type is not None:
+            logger.warning(
+                'DistributedOptimizer.sharded_state_dict parameter `sharding_type`'
+                ' is deprecated and will be removed.'
+                ' Use `metadata["distrib_optim_sharding_type"] instead`.'
+            )
+        else:
+            sharding_type = (metadata or {}).get(
+                'distrib_optim_sharding_type', 'fully_sharded_model_space'
+            )
+
         if not is_loading and sharding_type == 'fully_sharded_bucket_space':
             logger.warning(
                 '`fully_sharded_bucket_space` sharding for DistributedOptimizer'
@@ -1090,7 +1120,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                     v,
                     (1,),
                     (0,),
-                    replica_id=torch.distributed.get_rank(self.data_parallel_group),
+                    replica_id=self.data_parallel_group.rank(),
                 )
                 for k, v in state_dict.items()
             }
@@ -1134,10 +1164,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                 # Gather on rank 0
                 param_state_data = self.get_parameter_state_dp_zero()
 
-        if (
-            torch.distributed.get_rank(self.data_parallel_group) == 0
-            and self.distributed_optimizer_instance_id == 0
-        ):
+        if self.data_parallel_group.rank() == 0 and self.distributed_optimizer_instance_id == 0:
             # Fixed TPxPP. Save on DP rank 0 only
             param_state = ShardedObject(
                 f'optimizer.distributed.dp_group_idx_{self.data_parallel_group_idx}.param_state',
@@ -1159,8 +1186,8 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         Results in fully parallel save and load without any inter-process
         communication or intermediate buffers/copies.
         """
-        data_parallel_rank = torch.distributed.get_rank(self.data_parallel_group)
-        data_parallel_world_size = torch.distributed.get_world_size(self.data_parallel_group)
+        data_parallel_rank = self.data_parallel_group.rank()
+        data_parallel_world_size = self.data_parallel_group.size()
 
         state = self.get_parameter_state_fs_bucket_space()
         # per_bucket_numel metadata is saved separately for each TPxPP domain.
@@ -1486,7 +1513,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         # Data parallelism variables.
         assert self.data_parallel_group_gloo is not None
         data_parallel_world_size = self.data_parallel_group_gloo.size()
-        data_parallel_rank = torch.distributed.get_rank(self.data_parallel_group_gloo)
+        data_parallel_rank = self.data_parallel_group_gloo.rank()
         data_parallel_group_gloo = self.data_parallel_group_gloo
         data_parallel_global_ranks = torch.distributed.get_process_group_ranks(
             self.data_parallel_group_gloo
@@ -1602,7 +1629,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         # Data parallelism variables.
         assert self.data_parallel_group_gloo is not None
         data_parallel_world_size = self.data_parallel_group_gloo.size()
-        data_parallel_rank = torch.distributed.get_rank(self.data_parallel_group_gloo)
+        data_parallel_rank = self.data_parallel_group_gloo.rank()
         data_parallel_group_gloo = self.data_parallel_group_gloo
         data_parallel_global_ranks = torch.distributed.get_process_group_ranks(
             self.data_parallel_group_gloo
@@ -1760,7 +1787,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
             assert max(param_indices) == len(param_indices) - 1
             fp8_flags = []
             for i in range(len(param_indices)):
-                fp8_flag.append(index_to_fp8_map[i])
+                fp8_flags.append(index_to_fp8_map[i])
 
             fp8_buffer = self.buffers[fp8_gbuf_idx]
             non_fp8_buffer = self.buffers[non_fp8_gbuf_idx]
@@ -1828,7 +1855,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         if self.is_stub_optimizer:
             return
         state_dict = None
-        if torch.distributed.get_rank(self.data_parallel_group) == 0:
+        if self.data_parallel_group.rank() == 0:
             state_dict = torch.load(filename)
 
         self.load_parameter_state_from_dp_zero(
@@ -1858,12 +1885,12 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
             self.shard_float16_groups,  # grad empty/unused here?
             self.shard_fp32_groups,  # throws grad-access warning
         ]
-        if not self.config.use_precision_aware_optimizer:
+        if not self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
             total_groups.append(self.shard_fp32_from_float16_groups)
         for groups in total_groups:
             for group in groups:
                 _zero_grad_group_helper(
-                    group, set_to_none, self.config.use_precision_aware_optimizer
+                    group, set_to_none, self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8
                 )
 
     def _collect_main_grad_data_for_unscaling(self):
@@ -1871,7 +1898,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         Note: this should be equivalent to the float-16 optimizer's method,
         but written differently, so the two should be combined.
         """
-        if self.config.use_precision_aware_optimizer:
+        if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
             return [
                 param.decoupled_grad.data
                 for group in self.optimizer.param_groups
@@ -1895,7 +1922,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         ):
             for model_param, main_param in zip(model_group, main_group):
                 model_data.append(model_param.data)
-                if self.config.use_precision_aware_optimizer:
+                if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
                     main_data.append(None)
                 else:
                     main_data.append(main_param.data)
@@ -1977,7 +2004,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
                     model_grad = model_param.main_grad
                     shard_model_grad = model_grad.view(-1)[param_range.start : param_range.end]
-                    if self.config.use_precision_aware_optimizer:
+                    if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
                         # Pytorch requires a param and its' grad to be the same dtype, but we want
                         # their types to be different in precision-aware optimizer. So we use
                         # ".decoupled_grad" to replace ".grad".
@@ -1988,7 +2015,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                         shard_main_param.grad = shard_model_grad.float()
 
         # Copy model groups to shard groups.
-        if self.config.use_precision_aware_optimizer:
+        if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
             copy_group_grads(self.model_float16_groups, self.shard_float16_groups)
             copy_group_grads(self.model_fp32_groups, self.shard_fp32_groups)
         else:
@@ -2013,7 +2040,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
         # When using precision-aware optimizer, main params are held by self.optimizer. It will also
         # do the work of copying data from main params to model params.
-        if self.config.use_precision_aware_optimizer:
+        if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
             return
 
         quantize_param_shard(
@@ -2047,6 +2074,30 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         copy_group_params(self.shard_fp32_from_float16_groups, self.model_float16_groups)
         copy_group_params(self.shard_fp32_groups, self.model_fp32_groups)
 
+    def _copy_main_params_to_param_buffer(self):
+        """
+        This function is only used for MXFP8 params.
+        Copy FP32 main params directly to param buffer for param all-gather since
+        param buffer is not mapped to model params for MXFP8 case.
+
+        """
+        for shard_main_group, model_group in zip(
+            self.shard_fp32_from_float16_groups, self.model_float16_groups
+        ):
+            for shard_main_param, model_param in zip(shard_main_group, model_group):
+                # Get position in param buffer
+                param_range_map = self._get_model_param_range_map(model_param)
+                world_range = param_range_map["gbuf_world_in_bucket"]
+
+                # Get param buffer
+                gbuf_index, _, bucket_id = self.model_param_gbuf_map[model_param]
+                param_buffer = self.buffers[gbuf_index].buckets[bucket_id].param_data
+
+                # Get the correct slice of param buffer
+                shard_param_buffer = param_buffer.view(-1)[world_range.start : world_range.end]
+
+                shard_param_buffer.copy_(shard_main_param)
+
     def _copy_model_params_to_main_params(self):
         """
         Copy model params to main params.
@@ -2056,6 +2107,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         an intermediary.
         """
         if isinstance(self.optimizer, HybridDeviceOptimizer):
+            self.optimizer.update_fp32_param_by_new_param()
             return
 
         if self.ddp_config.use_custom_fsdp:
@@ -2065,7 +2117,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
         # When using precision-aware optimizer, main params are held by self.optimizer. It will also
         # do the work of copying data from main params to model params.
-        if self.config.use_precision_aware_optimizer:
+        if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
             return
 
         # Utility method for copying group params.
@@ -2077,7 +2129,14 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                     param_range = param_range_map["param"]
                     assert param_range.size == shard_main_param.nelement()
 
-                    shard_model_param = model_param.view(-1)[param_range.start : param_range.end]
+                    if is_float8tensor(model_param):
+                        shard_model_param = dequantize_fp8_tensor(model_param).view(-1)[
+                            param_range.start : param_range.end
+                        ]
+                    else:
+                        shard_model_param = model_param.view(-1)[
+                            param_range.start : param_range.end
+                        ]
                     shard_main_param.data.copy_(shard_model_param)
 
         # Copy model groups to shard groups.

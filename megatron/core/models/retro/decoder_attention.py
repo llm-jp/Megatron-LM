@@ -14,6 +14,7 @@ from megatron.core.inference.contexts import BaseInferenceContext
 from megatron.core.models.retro.base_attention import BaseRetroCrossAttention
 from megatron.core.models.retro.config import RetroConfig
 from megatron.core.models.retro.utils import get_all_true_mask
+from megatron.core.process_groups_config import ModelCommProcessGroups
 from megatron.core.transformer import ModuleSpec
 from megatron.core.transformer.attention import CrossAttentionSubmodules
 from megatron.core.transformer.enums import AttnMaskType
@@ -51,6 +52,7 @@ class RetroDecoderCrossAttention(BaseRetroCrossAttention):
         attn_mask_type (AttnMaskType): Mask type ('causal' or 'padding').
         encoder_block_spec (ModuleSpec): The first Retro decoder layer is
             provided with a transformer block spec to construct the neighbor encoder.
+        model_comm_pgs (ModelCommProcessGroups): Model communication process groups.
     """
 
     def __init__(
@@ -60,17 +62,23 @@ class RetroDecoderCrossAttention(BaseRetroCrossAttention):
         layer_number: int = 1,
         attn_mask_type: AttnMaskType = AttnMaskType.padding,
         encoder_block_spec: ModuleSpec = None,
+        model_comm_pgs: ModelCommProcessGroups = None,
     ):
         super().__init__(
             config=config,
             submodules=submodules,
             layer_number=layer_number,
             attn_mask_type=attn_mask_type,
+            model_comm_pgs=model_comm_pgs,
         )
 
         if encoder_block_spec:
             self.encoder = TransformerBlock(
-                config=config, spec=encoder_block_spec, pre_process=True, post_process=False
+                config=config,
+                spec=encoder_block_spec,
+                pre_process=True,
+                post_process=False,
+                model_comm_pgs=model_comm_pgs,
             )
             # self._encoder_key = 'encoder' # ... necessary?
         else:
@@ -119,19 +127,17 @@ class RetroDecoderCrossAttention(BaseRetroCrossAttention):
 
         # Retrieve neighbors.
         if self.encoder:
-
             # Sequence length remainder.
             first_ns = ns % self.retro_chunk_length
 
             # Case 1: Sequence length not divisible by chunk length.
             if first_ns > 0:
-
                 # Split sequence into first partial chunk & remaining chunks.
-                first_chunk, rest_chunk = hidden_states[:first_ns], hidden_states[first_ns:]
+                first_chunk, rest_chunk = (hidden_states[:first_ns], hidden_states[first_ns:])
 
                 # Pad partial chunk with zeros.
                 first_chunk = torch.nn.functional.pad(
-                    first_chunk, (0, 0, 0, 0, 0, self.retro_chunk_length - first_ns), 'constant', 0
+                    first_chunk, (0, 0, 0, 0, 0, self.retro_chunk_length - first_ns), "constant", 0
                 )
 
                 # Concatenate padded chunk with remaining chunks.
@@ -176,7 +182,7 @@ class RetroDecoderCrossAttention(BaseRetroCrossAttention):
 
         # Pad attending tokens to sequence length.
         padded_chunks = torch.nn.functional.pad(
-            attending_chunks, (0, 0, 0, 0, 0, self.retro_chunk_length - 1), 'constant', 0
+            attending_chunks, (0, 0, 0, 0, 0, self.retro_chunk_length - 1), "constant", 0
         )
 
         # Permute attending chunks.
@@ -264,7 +270,6 @@ class RetroDecoderBiasDropoutAdd(MegatronModule):
 
         # Re-enable torch grad to enable fused optimization.
         with torch.enable_grad():
-
             # Bias-dropout-add.
             x = bias_dropout_add(
                 (
@@ -287,7 +292,7 @@ class RetroDecoderBiasDropoutAdd(MegatronModule):
             )
 
             # Prepend zeros for non-attending tokens.
-            x = torch.nn.functional.pad(x, (0, 0, 0, 0, pad, 0), 'constant', 0)[
+            x = torch.nn.functional.pad(x, (0, 0, 0, 0, pad, 0), "constant", 0)[
                 :ns
             ]  # [ ns, bs, d ]
 

@@ -10,13 +10,13 @@ from torch import Tensor
 from megatron.core import InferenceParams, mpu, parallel_state, tensor_parallel
 from megatron.core.dist_checkpointing.mapping import ShardedStateDict
 from megatron.core.dist_checkpointing.utils import replace_prefix_for_sharding
-from megatron.core.fusions.fused_layer_norm import FusedLayerNorm
+from megatron.core.fp8_utils import get_fp8_context
+from megatron.core.models.backends import BackendSpecProvider, LocalSpecProvider
 from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core.tensor_parallel import (
-    all_gather_last_dim_from_tensor_parallel_region,
+    gather_from_tensor_model_parallel_region,
     scatter_to_sequence_parallel_region,
 )
-from megatron.core.tensor_parallel.layers import ColumnParallelLinear
 from megatron.core.transformer.enums import AttnMaskType
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
@@ -31,34 +31,14 @@ SUPPORTED_ATTN_MASK = [
     AttnMaskType.padding_causal,
 ]
 
-
 try:
-    from megatron.core.extensions.transformer_engine import (
-        TEColumnParallelLinear,
-        TEDelayedScaling,
-        TENorm,
-    )
+    import transformer_engine as te  # pylint: disable=unused-import
+
+    from megatron.core.extensions.transformer_engine_spec_provider import TESpecProvider
 
     HAVE_TE = True
 except ImportError:
     HAVE_TE = False
-
-from megatron.core.transformer.torch_norm import WrappedTorchNorm
-
-try:
-    import apex  # pylint: disable=unused-import
-
-    from megatron.core.fusions.fused_layer_norm import FusedLayerNorm
-
-    HAVE_APEX = True
-    LNImpl = FusedLayerNorm
-except ImportError:
-    import warnings
-
-    from megatron.core.transformer.torch_norm import WrappedTorchNorm
-
-    warnings.warn('Apex is not installed. Falling back to Torch Norm')
-    LNImpl = WrappedTorchNorm
 
 
 def tie_word_embeddings_state_dict(
@@ -229,14 +209,22 @@ def get_mtp_layer_spec(
     Returns:
         ModuleSpec: Module specification with TE modules
     """
-    if use_transformer_engine:
-        assert HAVE_TE, "transformer_engine should be installed if use_transformer_engine is True"
-        layer_norm_impl = TENorm
-        column_parallel_linear_impl = TEColumnParallelLinear
-    else:
-        layer_norm_impl = LNImpl
-        column_parallel_linear_impl = ColumnParallelLinear
+    return get_mtp_layer_spec_for_backend(
+        transformer_layer_spec,
+        backend=TESpecProvider() if use_transformer_engine else LocalSpecProvider(),
+    )
 
+
+def get_mtp_layer_spec_for_backend(
+    transformer_layer_spec: ModuleSpec, backend: BackendSpecProvider
+) -> ModuleSpec:
+    """Get the MTP layer spec.
+
+    Returns:
+        ModuleSpec: Module specification with modules from the backend.
+    """
+    column_parallel_linear_impl: type = backend.column_parallel_linear()
+    layer_norm_impl: type = backend.layer_norm()
     mtp_layer_spec = ModuleSpec(
         module=MultiTokenPredictionLayer,
         submodules=MultiTokenPredictionLayerSubmodules(
@@ -247,7 +235,6 @@ def get_mtp_layer_spec(
             layer_norm=layer_norm_impl,
         ),
     )
-
     return mtp_layer_spec
 
 
@@ -257,10 +244,10 @@ def get_mtp_layer_offset(config: TransformerConfig) -> int:
     return 0
 
 
-def get_mtp_num_layers_to_build(config: TransformerConfig) -> int:
+def get_mtp_num_layers_to_build(config: TransformerConfig, vp_stage: Optional[int] = None) -> int:
     """Get the number of MTP layers to build."""
     # Currently, we only support put all of MTP layers on the last pipeline stage.
-    if mpu.is_pipeline_last_stage():
+    if mpu.is_pipeline_last_stage(ignore_virtual=False, vp_stage=vp_stage):
         return config.mtp_num_layers if config.mtp_num_layers else 0
     else:
         return 0
@@ -337,11 +324,13 @@ class MultiTokenPredictionLayer(MegatronModule):
         config: TransformerConfig,
         submodules: MultiTokenPredictionLayerSubmodules,
         layer_number: int = 1,
+        vp_stage: Optional[int] = None,
     ):
         super().__init__(config=config)
         self.sequence_parallel = config.sequence_parallel
         self.submodules = submodules
         self.layer_number = layer_number
+        self.vp_stage = vp_stage
 
         self_attention_spec = self.submodules.transformer_layer.submodules.self_attention
         attn_mask_type = self_attention_spec.params.get('attn_mask_type', '')
@@ -381,7 +370,9 @@ class MultiTokenPredictionLayer(MegatronModule):
             skip_bias_add=False,
             is_expert=False,
         )
-        self.transformer_layer = build_module(self.submodules.transformer_layer, config=self.config)
+        self.transformer_layer = build_module(
+            self.submodules.transformer_layer, config=self.config, vp_stage=vp_stage
+        )
 
         self.final_layernorm = build_module(
             self.submodules.layer_norm,
@@ -389,6 +380,7 @@ class MultiTokenPredictionLayer(MegatronModule):
             hidden_size=self.config.hidden_size,
             eps=self.config.layernorm_epsilon,
         )
+        self.offload_context = nullcontext()
 
     def forward(
         self,
@@ -444,29 +436,10 @@ class MultiTokenPredictionLayer(MegatronModule):
         else:
             rng_context = nullcontext()
 
+        # Unlike transformer_block.py which needs to support mixed-precision in different layers,
+        # currently MTP only use global fp8 context.
         if self.config.fp8:
-            import transformer_engine  # To keep out TE dependency when not training in fp8
-
-            if self.config.fp8 == "e4m3":
-                fp8_format = transformer_engine.common.recipe.Format.E4M3
-            elif self.config.fp8 == "hybrid":
-                fp8_format = transformer_engine.common.recipe.Format.HYBRID
-            else:
-                raise ValueError("E4M3 and HYBRID are the only supported FP8 formats.")
-
-            fp8_recipe = TEDelayedScaling(
-                config=self.config,
-                fp8_format=fp8_format,
-                override_linear_precision=(False, False, not self.config.fp8_wgrad),
-            )
-            fp8_group = None
-            if parallel_state.model_parallel_is_initialized():
-                fp8_group = parallel_state.get_amax_reduction_group(
-                    with_context_parallel=True, tp_only_amax_red=self.tp_only_amax_red
-                )
-            fp8_context = transformer_engine.pytorch.fp8_autocast(
-                enabled=True, fp8_recipe=fp8_recipe, fp8_group=fp8_group
-            )
+            fp8_context = get_fp8_context(self.config)
         else:
             fp8_context = nullcontext()
 
@@ -483,11 +456,16 @@ class MultiTokenPredictionLayer(MegatronModule):
             # and the (i + K)-th tocken's embedding, and combine them with linear projection.
             hidden_states = torch.cat((decoder_input, hidden_states), -1)
             hidden_states, _ = self.eh_proj(hidden_states)
-            # For tensor parallel, all gather after linear_fc.
-            hidden_states = all_gather_last_dim_from_tensor_parallel_region(hidden_states)
+            # For tensor parallel we need to gather the tensor across the model-parallel
+            # ranks after the linear projection. This used to call
+            # `all_gather_last_dim_from_tensor_parallel_region`, but that utility reduces
+            # the gradient in backward pass and was therefore incorrect in this context.
+            # It has been replaced with the correct `gather_from_tensor_model_parallel_region`.
+            hidden_states = gather_from_tensor_model_parallel_region(hidden_states)
             # For sequence parallel, scatter after linear_fc and before transformer layer.
             if self.sequence_parallel:
                 hidden_states = scatter_to_sequence_parallel_region(hidden_states)
+
             hidden_states, _ = self.transformer_layer(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
@@ -597,17 +575,23 @@ class MultiTokenPredictionBlock(MegatronModule):
     """
 
     def __init__(
-        self, config: TransformerConfig, spec: Union[TransformerBlockSubmodules, ModuleSpec]
+        self,
+        config: TransformerConfig,
+        spec: Union[TransformerBlockSubmodules, ModuleSpec],
+        vp_stage: Optional[int] = None,
     ):
         super().__init__(config=config)
         self.submodules = _get_mtp_block_submodules(config, spec)
         self.mtp_loss_scaling_factor = config.mtp_loss_scaling_factor
+        self.vp_stage = vp_stage
         self._build_layers()
         assert len(self.layers) > 0, "MultiTokenPredictionBlock must have at least one layer."
 
     def _build_layers(self):
         def build_layer(layer_spec, layer_number):
-            return build_module(layer_spec, config=self.config, layer_number=layer_number)
+            return build_module(
+                layer_spec, config=self.config, layer_number=layer_number, vp_stage=self.vp_stage
+            )
 
         self.layers = torch.nn.ModuleList(
             [
@@ -663,6 +647,7 @@ class MultiTokenPredictionBlock(MegatronModule):
         for layer_number in range(len(self.layers)):
             # Calc logits for the current Multi-Token Prediction (MTP) layers.
             input_ids, _ = roll_tensor(input_ids, shifts=-1, dims=-1)
+            position_ids, _ = roll_tensor(position_ids, shifts=-1, dims=-1)
             # embedding
             decoder_input = embedding(input_ids=input_ids, position_ids=position_ids)
             # norm, linear projection and transformer

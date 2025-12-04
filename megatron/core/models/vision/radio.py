@@ -5,7 +5,6 @@ from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
-from einops import rearrange
 from torch import nn
 
 from megatron.core.config_logger import has_config_logger_enabled, log_config_to_disk
@@ -17,6 +16,13 @@ from megatron.core.transformer.transformer_block import TransformerBlock
 from megatron.core.transformer.transformer_config import TransformerConfig
 
 # RADIO reference code: https://github.com/NVlabs/RADIO
+
+try:
+    from einops import rearrange
+
+    HAVE_EINOPS = True
+except ImportError:
+    HAVE_EINOPS = False
 
 
 class RADIOViTModel(VisionModule):
@@ -90,7 +96,11 @@ class RADIOViTModel(VisionModule):
         self.class_token_len = class_token_len
         if self.add_class_token:
             self.class_token = nn.Parameter(
-                torch.randn(self.class_token_len, self.visual_hidden_size)
+                torch.randn(
+                    self.class_token_len,
+                    self.visual_hidden_size,
+                    dtype=transformer_config.params_dtype,
+                )
             )
 
         self.seq_length = (img_h // self.patch_dim) * (img_w // self.patch_dim) + (
@@ -99,7 +109,13 @@ class RADIOViTModel(VisionModule):
 
         pos_scale = self.visual_hidden_size**-0.5
         self.position_embeddings = nn.Parameter(
-            torch.randn(1, self.max_num_patches, self.visual_hidden_size) * pos_scale
+            torch.randn(
+                1,
+                self.max_num_patches,
+                self.visual_hidden_size,
+                dtype=transformer_config.params_dtype,
+            )
+            * pos_scale
         )
         self.pos_dropout = pos_dropout
         self.has_cpe = has_cpe
@@ -161,12 +177,18 @@ class RADIOViTModel(VisionModule):
         Returns:
             x (torch.Tensor): output after final transformer block of shape [b, s, h].
         """
+
+        if not HAVE_EINOPS:
+            raise ImportError(
+                "einops is required for RADIOViTModel, please install it with `pip install einops`"
+            )
+
         input_size = x.shape[2:]
         py = x.shape[-2] // self.patch_dim
         px = x.shape[-1] // self.patch_dim
         x = rearrange(
             x,
-            'b c (py yy) (px xx) -> b (py px) (c yy xx)',
+            "b c (py yy) (px xx) -> b (py px) (c yy xx)",
             py=py,
             yy=self.patch_dim,
             px=px,
@@ -301,14 +323,14 @@ class RADIOViTModel(VisionModule):
                 pos_embed = F.grid_sample(
                     pos_embed.float().expand(batch_size, -1, -1, -1),
                     grid=grid_xy,
-                    mode='bilinear',
-                    padding_mode='zeros',
+                    mode="bilinear",
+                    padding_mode="zeros",
                     align_corners=True,
                 ).to(pos_embed.dtype)
             else:
                 max_dim = max(input_dims)
                 pos_embed = F.interpolate(
-                    pos_embed.float(), size=(max_dim, max_dim), align_corners=True, mode='bilinear'
+                    pos_embed.float(), size=(max_dim, max_dim), align_corners=True, mode="bilinear"
                 ).to(pos_embed.dtype)
 
                 pos_embed = window_select(pos_embed)
@@ -317,7 +339,7 @@ class RADIOViTModel(VisionModule):
 
         if pos_embed.shape[-2:] != input_dims:
             pos_embed = F.interpolate(
-                pos_embed.float(), size=input_dims, align_corners=True, mode='bilinear'
+                pos_embed.float(), size=input_dims, align_corners=True, mode="bilinear"
             ).to(pos_embed.dtype)
 
         pos_embed = pos_embed.flatten(2).permute(0, 2, 1)

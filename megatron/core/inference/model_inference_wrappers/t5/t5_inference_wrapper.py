@@ -60,6 +60,7 @@ class T5InferenceWrapper(AbstractModelInferenceWrapper):
         Returns:
             A dict with all the inference input needed for the batch.
         """
+
         # get max_sequence_length
         max_sequence_length = get_attr_wrapped_model(self.model, "max_sequence_length")
 
@@ -224,6 +225,6 @@ class T5InferenceWrapper(AbstractModelInferenceWrapper):
             encoder_decoder_mask,
             inference_context=None,
         )
-        logits = tensor_parallel.gather_from_tensor_model_parallel_region(logits)
+        logits = tensor_parallel.gather_from_tensor_model_parallel_region(logits, self.tp_group)
 
         return logits

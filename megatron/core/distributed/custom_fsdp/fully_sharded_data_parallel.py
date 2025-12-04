@@ -18,10 +18,12 @@ from megatron.core.distributed.custom_fsdp.param_and_grad_buffer import (
     GradReducePipeline,
     ParamAndGradBuffer,
     PrefetchOrder,
+    override_sharded_param_methods_with_safety_checks,
 )
 from megatron.core.distributed.data_parallel_base import _BaseDataParallel
 from megatron.core.distributed.distributed_data_parallel_config import DistributedDataParallelConfig
 from megatron.core.fp8_utils import is_float8tensor
+from megatron.core.process_groups_config import GradCommProcessGroups
 from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.transformer.transformer_layer import TransformerLayer
 from megatron.core.utils import is_submodule, log_single_rank
@@ -83,6 +85,10 @@ class FullyShardedDataParallel(_BaseDataParallel):
         disable_bucketing: If true, force assign all parameters to a single bucket. If false,
             use standard bucketing policy: assign parameters to smaller buckets and all-reduce
             per bucket.
+        grad_comm_pgs: Optional GradCommProcessGroups object. If not provided, the default
+            process groups from parallel_state will be used. If provided, module expects
+            grad_comm_pgs to have dp_cp or dp (if cp=1) and
+            expt_dp attributes(if using expert data parallelism).
     Examples:
         >>> model = GPTModel(config)
         >>> model = FullyShardedDataParallel(
@@ -93,7 +99,6 @@ class FullyShardedDataParallel(_BaseDataParallel):
         ... )
     """
 
-    # TODO: add hybrid FSDP (shard model states in a partial DP domain)
     def __init__(
         self,
         config: TransformerConfig,
@@ -102,6 +107,7 @@ class FullyShardedDataParallel(_BaseDataParallel):
         fsdp_unit_modules: Optional[List[torch.nn.Module]] = None,
         disable_bucketing: bool = False,
         device: Optional[torch.device] = None,
+        grad_comm_pgs: Optional[GradCommProcessGroups] = None,
     ):
         super().__init__(config=config, module=module)
         if has_config_logger_enabled(config):
@@ -114,6 +120,61 @@ class FullyShardedDataParallel(_BaseDataParallel):
             logging.INFO,
             f'Setting up DistributedDataParallel with config {self.ddp_config}',
         )
+
+        # Check if the module has expert parameters.
+        self.contains_expert_parameters = False
+        for _, param in self.module.named_parameters():
+            if not getattr(param, 'allreduce', True):
+                self.contains_expert_parameters = True
+                break
+
+        # Initialize the data parallel and expert data parallel groups.
+        self.inter_fsdp_group_grad_reduce = self.ddp_config.num_distributed_optimizer_instances > 1
+        self.inter_distopt_group = None
+        self.expt_dp_group = None
+        self.intra_expt_dp_group = None
+        if grad_comm_pgs is None:
+            self.dp_cp_group = parallel_state.get_data_parallel_group(
+                with_context_parallel=True, partial_data_parallel=False
+            )
+            self.intra_dp_cp_group = parallel_state.get_data_parallel_group(
+                with_context_parallel=True, partial_data_parallel=True
+            )
+            self.expt_dp_group = parallel_state.get_expert_data_parallel_group()
+            self.intra_expt_dp_group = parallel_state.get_expert_data_parallel_group(
+                partial_expert_data_parallel=True
+            )
+            if self.inter_fsdp_group_grad_reduce:
+                self.inter_distopt_group = (
+                    parallel_state.get_inter_distributed_optimizer_instance_group()
+                )
+        else:
+            cp_size = getattr(config, 'context_parallel_size', 1)
+
+            if hasattr(grad_comm_pgs, 'dp_cp'):
+                self.dp_cp_group = grad_comm_pgs.dp_cp
+            elif hasattr(grad_comm_pgs, 'dp') and cp_size == 1:
+                self.dp_cp_group = grad_comm_pgs.dp
+            else:
+                raise ValueError(
+                    "Required process group missing: 'dp_cp' (or 'dp' when context_parallel_size=1)"
+                )
+
+            if self.contains_expert_parameters:
+                assert hasattr(
+                    grad_comm_pgs, 'expt_dp'
+                ), 'expert process group is required when using expert parameters'
+                self.expt_dp_group = grad_comm_pgs.expt_dp
+                if self.inter_fsdp_group_grad_reduce:
+                    self.intra_expt_dp_group = self.expt_dp_group
+                else:
+                    self.intra_expt_dp_group = grad_comm_pgs.intra_expt_dp
+
+            if self.inter_fsdp_group_grad_reduce:
+                self.inter_distopt_group = grad_comm_pgs.inter_dist_opt
+                self.intra_dp_cp_group = grad_comm_pgs.intra_dp_cp
+            else:
+                self.intra_dp_cp_group = self.dp_cp_group
 
         self.bucket_size = self.ddp_config.bucket_size
         if disable_bucketing:
@@ -130,10 +191,6 @@ class FullyShardedDataParallel(_BaseDataParallel):
             else:
                 self.fsdp_unit_modules = []
         self.main_weights = True
-        self.data_parallel_group = parallel_state.get_data_parallel_group(
-            with_context_parallel=True
-        )
-        self.expert_data_parallel_group = parallel_state.get_expert_data_parallel_group()
 
         # Determine if we should delay the gradient reduction.
         self.is_delay_grad_reduce = self.ddp_config.data_parallel_sharding_strategy in [
@@ -166,12 +223,15 @@ class FullyShardedDataParallel(_BaseDataParallel):
             expert_gradient_scaling_factor = None
         else:
             if self.ddp_config.average_in_collective:
-                # FIXME(@jianbinc): Will fix this issue based on Parallel Folding's EDP patch MR.
-                raise Exception("Not supported")
+                gradient_scaling_factor = 1.0
+                if self.contains_expert_parameters:
+                    expert_gradient_scaling_factor = (
+                        self.expt_dp_group.size() / self.dp_cp_group.size()
+                    )
+                else:
+                    expert_gradient_scaling_factor = None
             else:
-                data_parallel_world_size = parallel_state.get_data_parallel_world_size(
-                    with_context_parallel=True
-                )
+                data_parallel_world_size = self.dp_cp_group.size()
                 gradient_scaling_factor = 1.0 / data_parallel_world_size
                 expert_gradient_scaling_factor = 1.0 / data_parallel_world_size
 
@@ -186,8 +246,9 @@ class FullyShardedDataParallel(_BaseDataParallel):
                 fsdp_unit_modules=self.fsdp_unit_modules,
                 data_parallel_sharding_strategy=self.data_parallel_sharding_strategy,
             ),
-            data_parallel_group=self.data_parallel_group,
-            expert_data_parallel_group=self.expert_data_parallel_group,
+            data_parallel_group=self.intra_dp_cp_group,
+            expert_data_parallel_group=self.intra_expt_dp_group,
+            inter_data_parallel_group=self.inter_distopt_group,
             preserve_fp32_weights=self.ddp_config.preserve_fp32_weights,
             grad_reduce_in_fp32=self.ddp_config.grad_reduce_in_fp32,
             gradient_scaling_factor=gradient_scaling_factor,
@@ -201,7 +262,9 @@ class FullyShardedDataParallel(_BaseDataParallel):
 
         # Initialize the reduce-scatter pipeline.
         self.grad_reduce_pipeline = GradReducePipeline(
-            self.param_and_grad_buffer, cuda_stream=self.side_stream_for_buffer_copy_and_grad_accum
+            self.param_and_grad_buffer,
+            rs_stream=self.side_stream_for_buffer_copy_and_grad_accum,
+            inter_fsdp_group_grad_reduce=self.inter_fsdp_group_grad_reduce,
         )
 
         # Initialize the all-gather pipeline.
@@ -225,6 +288,11 @@ class FullyShardedDataParallel(_BaseDataParallel):
 
         self.suggested_RS_queue_capacity = suggested_communication_unit_size
         self.suggested_AG_prefetch_size = suggested_communication_unit_size
+
+        if self.data_parallel_sharding_strategy == "optim_grads_params":
+            override_sharded_param_methods_with_safety_checks(
+                self.module.parameters(), self.all_gather_pipeline
+            )
 
     def _register_fsdp_hooks(self, root_module):
         """Register necessary hooks for Fully Sharded Data Parallel (FSDP) execution on the model.
@@ -318,6 +386,12 @@ class FullyShardedDataParallel(_BaseDataParallel):
             ]
             if overwrite_main_grad:
                 if not param.grad_added_to_main_grad:
+                    # Get `main_grad` will allocate bucket, check that the currently
+                    # used main_grad buffer does not exceed the scope of two FSDP Unit
+                    # Modules, i.e., the buffer limit imposed by double-buffer allocator.
+                    if self.ddp_config.fsdp_double_buffer:
+                        self.grad_reduce_pipeline._enforce_double_buffer_limit([group_id])
+
                     if param.grad is not None:
                         param.main_grad.copy_(param.grad)
                         del param.grad
@@ -352,7 +426,11 @@ class FullyShardedDataParallel(_BaseDataParallel):
             ]
             if grad_reduce_every_bprop or self.is_last_microbatch:
                 self.grad_reduce_pipeline.reduce_gradients(
-                    param_list, suggested_queue_capacity=self.suggested_RS_queue_capacity
+                    param_list,
+                    suggested_queue_capacity=self.suggested_RS_queue_capacity,
+                    inter_fsdp_group_grad_reduce=(
+                        self.inter_fsdp_group_grad_reduce and self.is_last_microbatch
+                    ),
                 )
 
         def _pre_forward_param_unshard(
@@ -461,6 +539,9 @@ class FullyShardedDataParallel(_BaseDataParallel):
                 self.grad_reduce_pipeline.reduce_gradients(
                     list(self._params_require_handle_grad),
                     suggested_queue_capacity=self.suggested_RS_queue_capacity,
+                    inter_fsdp_group_grad_reduce=(
+                        self.inter_fsdp_group_grad_reduce and self.is_last_microbatch
+                    ),
                 )
                 self.grad_reduce_pipeline.reset()
 
@@ -588,9 +669,7 @@ class FullyShardedDataParallel(_BaseDataParallel):
         else:
             self.all_gather_pipeline.reset()
             for bucket_id in range(self.all_gather_pipeline.num_buckets):
-                self.all_gather_pipeline.all_gather_bucket_and_set_items(
-                    bucket_id=bucket_id, async_op=True
-                )
+                self.all_gather_pipeline.async_bucket_gather(bucket_id)
                 group = self.param_and_grad_buffer.parameter_groups[bucket_id]
                 if group.model_weight_buffer is None:
                     continue
@@ -672,13 +751,9 @@ class FullyShardedDataParallel(_BaseDataParallel):
             is_expert_parallel = not getattr(param, 'allreduce', True)
 
             if is_expert_parallel:
-                data_parallel_group = parallel_state.get_data_modulo_expert_parallel_group(
-                    with_context_parallel=True
-                )
+                data_parallel_group = self.expt_dp_group
             else:
-                data_parallel_group = parallel_state.get_data_parallel_group(
-                    with_context_parallel=True
-                )
+                data_parallel_group = self.dp_cp_group
             torch.distributed.broadcast(
                 param.data,
                 src=torch.distributed.get_global_rank(data_parallel_group, 0),

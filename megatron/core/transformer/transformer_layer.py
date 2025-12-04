@@ -1,5 +1,6 @@
 # Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
 
+import logging
 import warnings
 from abc import ABC
 from dataclasses import dataclass, field
@@ -13,15 +14,27 @@ from megatron.core import parallel_state, tensor_parallel
 from megatron.core.dist_checkpointing.mapping import ShardedStateDict
 from megatron.core.dist_checkpointing.utils import apply_prefix_mapping
 from megatron.core.packed_seq_params import PackedSeqParams
+from megatron.core.process_groups_config import ModelCommProcessGroups
 from megatron.core.transformer.cuda_graphs import CudaGraphManager
+from megatron.core.transformer.enums import LayerType
 from megatron.core.transformer.identity_op import IdentityFuncOp, IdentityOp
+from megatron.core.transformer.mlp import MLP
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
 from megatron.core.transformer.transformer_config import TransformerConfig
-from megatron.core.utils import deprecate_inference_params, is_te_min_version, make_viewless_tensor
+from megatron.core.utils import (
+    deprecate_inference_params,
+    is_te_min_version,
+    log_single_rank,
+    make_viewless_tensor,
+    nvtx_range_pop,
+    nvtx_range_push,
+)
+
+logger = logging.getLogger(__name__)
 
 
-def get_transformer_layer_offset(config: TransformerConfig):
+def get_transformer_layer_offset(config: TransformerConfig, vp_stage: Optional[int] = None):
     """Get the index offset of current pipeline stage, given the level of pipelining."""
     pipeline_rank = parallel_state.get_pipeline_model_parallel_rank()
     if not parallel_state.is_inside_encoder():
@@ -31,7 +44,11 @@ def get_transformer_layer_offset(config: TransformerConfig):
 
     if config.pipeline_model_parallel_size > 1:
 
-        if (
+        if config.pipeline_model_parallel_layout:
+            offset = config.pipeline_model_parallel_layout.get_layer_offset(
+                layer_type=LayerType.decoder, vp_stage=vp_stage
+            )
+        elif (
             config.num_layers_in_first_pipeline_stage is not None
             or config.num_layers_in_last_pipeline_stage is not None
         ):
@@ -69,9 +86,10 @@ def get_transformer_layer_offset(config: TransformerConfig):
                 - num_layers_in_last_pipeline_stage
             )
 
-            if parallel_state.get_virtual_pipeline_model_parallel_world_size() is not None:
-                vp_rank = parallel_state.get_virtual_pipeline_model_parallel_rank()
-                vp_size = parallel_state.get_virtual_pipeline_model_parallel_world_size()
+            if (vp_size := config.virtual_pipeline_model_parallel_size) is not None:
+                assert (
+                    vp_stage is not None
+                ), "vp_stage must be provided if virtual pipeline model parallel size is set"
 
                 # Calculate number of layers in each virtual model chunk
                 # If the num_layers_in_first_pipeline_stage and
@@ -102,10 +120,10 @@ def get_transformer_layer_offset(config: TransformerConfig):
 
                 # Calculate the layer offset with interleaved uneven pipeline parallelism
                 if pipeline_rank == 0:
-                    offset = vp_rank * total_virtual_chunks
+                    offset = vp_stage * total_virtual_chunks
                 else:
                     offset = (
-                        vp_rank * total_virtual_chunks
+                        vp_stage * total_virtual_chunks
                         + num_layers_per_virtual_model_chunk_in_first_pipeline_stage
                         + (pipeline_rank - 1)
                         * (
@@ -144,20 +162,23 @@ def get_transformer_layer_offset(config: TransformerConfig):
 
             num_layers_per_pipeline_rank = num_layers // config.pipeline_model_parallel_size
 
-            if parallel_state.get_virtual_pipeline_model_parallel_world_size() is not None:
-                vp_rank = parallel_state.get_virtual_pipeline_model_parallel_rank()
-                vp_size = parallel_state.get_virtual_pipeline_model_parallel_world_size()
+            if (vp_size := config.virtual_pipeline_model_parallel_size) is not None:
+                assert (
+                    vp_stage is not None
+                ), "vp_stage must be provided if virtual pipeline model parallel size is set"
 
                 num_layers_per_virtual_rank = num_layers_per_pipeline_rank // vp_size
                 total_virtual_chunks = num_layers // vp_size
-                offset = vp_rank * total_virtual_chunks + (
+                offset = vp_stage * total_virtual_chunks + (
                     pipeline_rank * num_layers_per_virtual_rank
                 )
 
                 # Reduce the offset of embedding layer from the total layer number
                 if (
                     config.account_for_embedding_in_pipeline_split
-                    and not parallel_state.is_pipeline_first_stage()
+                    and not parallel_state.is_pipeline_first_stage(
+                        ignore_virtual=False, vp_stage=vp_stage
+                    )
                 ):
                     offset -= 1
             else:
@@ -166,7 +187,9 @@ def get_transformer_layer_offset(config: TransformerConfig):
                 # Reduce the offset of embedding layer from the total layer number
                 if (
                     config.account_for_embedding_in_pipeline_split
-                    and not parallel_state.is_pipeline_first_stage()
+                    and not parallel_state.is_pipeline_first_stage(
+                        ignore_virtual=False, vp_stage=vp_stage
+                    )
                 ):
                     offset -= 1
     else:
@@ -247,6 +270,8 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         submodules: TransformerLayerSubmodules,
         layer_number: int = 1,
         hidden_dropout: Optional[float] = None,
+        model_comm_pgs: Optional[ModelCommProcessGroups] = None,
+        vp_stage: Optional[int] = None,
     ):
         super().__init__(config=config)
 
@@ -277,8 +302,11 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
                 self.cuda_graph_manual_hooks = []
                 self.current_microbatch = -1
 
+        if model_comm_pgs is None:
+            model_comm_pgs = ModelCommProcessGroups.use_mpu_process_groups()
+
         self.submodules_config = submodules
-        self.layer_number = layer_number + get_transformer_layer_offset(self.config)
+        self.layer_number = layer_number + get_transformer_layer_offset(self.config, vp_stage)
         self.hidden_dropout = config.hidden_dropout if hidden_dropout is None else hidden_dropout
 
         # [Module 1: Input Layernorm] Optional Layernorm on the input data
@@ -297,11 +325,13 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
             else:
                 attention_optional_kwargs["cp_comm_type"] = config.cp_comm_type
 
+        attention_optional_kwargs["model_comm_pgs"] = model_comm_pgs
+
         # [Module 2: SelfAttention]
         self.self_attention = build_module(
             submodules.self_attention,
             config=self.config,
-            layer_number=layer_number,
+            layer_number=self.layer_number,
             **attention_optional_kwargs,
         )
 
@@ -320,7 +350,7 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         self.cross_attention = build_module(
             submodules.cross_attention,
             config=self.config,
-            layer_number=layer_number,
+            layer_number=self.layer_number,
             **attention_optional_kwargs,
         )
 
@@ -335,7 +365,30 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
             eps=self.config.layernorm_epsilon,
         )
         # [Module 8: MLP block]
-        self.mlp = build_module(submodules.mlp, config=self.config)
+        additional_mlp_kwargs = {}
+        # import here to avoid circular import
+        from megatron.core.transformer.moe.experts import GroupedMLP, SequentialMLP, TEGroupedMLP
+        from megatron.core.transformer.moe.moe_layer import MoELayer
+
+        # MLP expects tp_group but MoELayer expects model_comm_pgs to be passed in.
+        # We can change MLP to accept model_comm_pgs but it makes the logic implicit
+        # The conditional below is to make the logic explicit
+        # if submodules.mlp is not a ModuleSpec,we dont have to handle passing additional kwargs
+        if isinstance(submodules.mlp, ModuleSpec):
+            if submodules.mlp.module in (MoELayer, GroupedMLP, TEGroupedMLP, SequentialMLP):
+                additional_mlp_kwargs["model_comm_pgs"] = model_comm_pgs
+            elif submodules.mlp.module == MLP:
+                assert hasattr(
+                    model_comm_pgs, 'tp'
+                ), 'TP process group is required for MLP in TransformerLayer'
+                additional_mlp_kwargs["tp_group"] = model_comm_pgs.tp
+            else:
+                log_single_rank(
+                    logger,
+                    logging.WARNING,
+                    f"Unknown MLP type: {type(submodules.mlp)}. Using default kwargs.",
+                )
+        self.mlp = build_module(submodules.mlp, config=self.config, **additional_mlp_kwargs)
         if hasattr(self.mlp, 'set_layer_number'):
             self.mlp.set_layer_number(self.layer_number)
 
@@ -352,7 +405,6 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
                 if not isinstance(self.pre_mlp_layernorm, IdentityOp):
                     self.recompute_pre_mlp_layernorm = True
             if "mlp" in self.config.recompute_modules:
-                from megatron.core.transformer.moe.moe_layer import MoELayer
 
                 if not isinstance(self.mlp, MoELayer):
                     self.recompute_mlp = True
@@ -386,8 +438,8 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         This method calls the core computation of a transformer layer, including
         self-attention, cross-attention (if applicable), and feed-forward operations.
         """
-        pre_mlp_layernorm_output, residual, context = self._forward_attention(*args, **kwargs)
-        output = self._forward_mlp(pre_mlp_layernorm_output, residual)
+        hidden_states, context = self._forward_attention(*args, **kwargs)
+        output = self._forward_mlp(hidden_states, kwargs.get("inference_context", None))
         return output, context
 
     def _forward_attention(
@@ -424,9 +476,8 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
                 during inference.
 
         Returns:
-            Tuple[Tensor, Tensor, Tensor]: A tuple containing:
-                pre_mlp_layernorm_output (Tensor): Transformed hidden states before the MLP.
-                residual (Tensor): Residual connection.
+            Tuple[Tensor, Tensor]: A tuple containing:
+                hidden_states (Tensor): Transformed hidden states before the MLP layernorm.
                 context (Tensor): Updated context tensor if cross-attention is used,
                 otherwise None.
         """
@@ -446,6 +497,7 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
             input_layernorm_output = self.input_layernorm(hidden_states)
 
         # Self attention.
+        nvtx_range_push(suffix="self_attention")
         attention_output_with_bias = self.self_attention(
             input_layernorm_output,
             attention_mask=attention_mask,
@@ -457,6 +509,7 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
             packed_seq_params=packed_seq_params,
             sequence_len_offset=sequence_len_offset,
         )
+        nvtx_range_pop(suffix="self_attention")
 
         if self.recompute_input_layernorm:
             # discard the output of the input layernorm and register the recompute
@@ -467,10 +520,12 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
 
         # TODO: could we move `bias_dropout_add_exec_handler` itself
         # inside the module provided in the `bias_dropout_add_spec` module?
+        nvtx_range_push(suffix="self_attn_bda")
         with self.bias_dropout_add_exec_handler():
             hidden_states = self.self_attn_bda(self.training, self.config.bias_dropout_fusion)(
                 attention_output_with_bias, residual, self.hidden_dropout
             )
+        nvtx_range_pop(suffix="self_attn_bda")
 
         # Residual connection.
         residual = hidden_states
@@ -496,6 +551,19 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
                 attention_output_with_bias, residual, self.hidden_dropout
             )
 
+        return hidden_states, context
+
+    def _forward_mlp(self, hidden_states, inference_context=None):
+        """
+        Perform a forward pass through the feed-forward layer.
+
+        Args:
+            hidden_states (Tensor): Transformed hidden states before the MLP layernorm.
+
+        Returns:
+            output (Tensor): Transformed hidden states of shape [s, b, h].
+        """
+
         # Residual connection.
         residual = hidden_states
 
@@ -508,25 +576,45 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         else:
             pre_mlp_layernorm_output = self.pre_mlp_layernorm(hidden_states)
 
-        return pre_mlp_layernorm_output, residual, context
+        nvtx_range_push(suffix="mlp")
+        # Potentially chunk the MLP computation during prefill to minimize the peak activation size
+        should_chunk_mlp_for_prefill = (
+            self.config.mlp_chunks_for_prefill > 1
+            and inference_context is not None
+            and not inference_context.is_decode_only()
+            and not isinstance(self.mlp, IdentityOp)
+        )
 
-    def _forward_mlp(self, pre_mlp_layernorm_output, residual):
-        """
-        Perform a forward pass through the feed-forward layer.
-
-        Args:
-            pre_mlp_layernorm_output (Tensor): Transformed hidden states before the MLP.
-            residual (Tensor): Residual connection.
-
-        Returns:
-            output (Tensor): Transformed hidden states of shape [s, b, h].
-        """
-
-        # MLP.
         if self.recompute_mlp:
-            mlp_output_with_bias = tensor_parallel.checkpoint(
-                self.mlp, False, pre_mlp_layernorm_output
-            )
+            if self.config.fp8:
+                # import here to avoid circular import
+                from megatron.core.extensions.transformer_engine import te_checkpoint
+
+                mlp_output_with_bias = te_checkpoint(
+                    self.mlp,
+                    False,
+                    tensor_parallel.random.get_cuda_rng_tracker,
+                    parallel_state.get_tensor_model_parallel_group(),
+                    pre_mlp_layernorm_output,
+                )
+            else:
+                mlp_output_with_bias = tensor_parallel.checkpoint(
+                    self.mlp, False, pre_mlp_layernorm_output
+                )
+        elif should_chunk_mlp_for_prefill:
+            # Chunk input along sequence dimension
+            num_chunks = min(self.config.mlp_chunks_for_prefill, pre_mlp_layernorm_output.shape[0])
+            chunks = pre_mlp_layernorm_output.chunk(num_chunks, dim=0)
+
+            # Compute outputs for each chunk
+            outputs = [self.mlp(chunk) for chunk in chunks]
+
+            # Aggregate chunk outputs
+            mlp_output = torch.cat([out for out, _ in outputs], dim=0)
+            bias_chunks = [bias for _, bias in outputs if bias is not None]
+            bias_output = torch.stack(bias_chunks, dim=0).sum(dim=0) if bias_chunks else None
+            mlp_output_with_bias = (mlp_output, bias_output)
+
         else:
             mlp_output_with_bias = self.mlp(pre_mlp_layernorm_output)
 
@@ -536,13 +624,16 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
             self.pre_mlp_norm_checkpoint.discard_output_and_register_recompute(
                 mlp_output_with_bias[0]
             )
+        nvtx_range_pop(suffix="mlp")
 
         # TODO: could we move `bias_dropout_add_exec_handler` itself
         # inside the module provided in the `bias_dropout_add_spec` module?
+        nvtx_range_push(suffix="mlp_bda")
         with self.bias_dropout_add_exec_handler():
             hidden_states = self.mlp_bda(self.training, self.config.bias_dropout_fusion)(
                 mlp_output_with_bias, residual, self.hidden_dropout
             )
+        nvtx_range_pop(suffix="mlp_bda")
 
         # Jit compiled function creates 'view' tensor. This tensor
         # potentially gets saved in the MPU checkpoint function context,
@@ -652,14 +743,12 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
            attribute can be set to control the scope of the CUDA graph.
         2. If context is None, it cannot be returned as output.
         """
-        pre_mlp_layernorm_output, residual, context = self._forward_attention(*args, **kwargs)
+        hidden_states, context = self._forward_attention(*args, **kwargs)
 
-        cuda_graph_outputs = []
-        if self.config.cuda_graph_scope == "attn":
-            cuda_graph_outputs += [pre_mlp_layernorm_output, residual]
-        else:
-            output = self._forward_mlp(pre_mlp_layernorm_output, residual)
-            cuda_graph_outputs.append(output)
+        if self.config.cuda_graph_scope == "full":
+            hidden_states = self._forward_mlp(hidden_states)
+        cuda_graph_outputs = [hidden_states]
+
         if context is not None:
             cuda_graph_outputs.append(context)
         return tuple(cuda_graph_outputs)

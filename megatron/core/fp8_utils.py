@@ -1,12 +1,13 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 """Utility functions related to FP8 that are used throughout Megatron core"""
+
 from contextlib import nullcontext
 from typing import List, Optional
 
 import torch
-from packaging.version import Version as PkgVersion
 
+from megatron.core.enums import Fp8Recipe
 from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.utils import get_te_version, is_te_min_version
 
@@ -20,27 +21,70 @@ except (ImportError, ModuleNotFoundError):
     # Transformer Engine not found
     pass
 
-# Check if Transformer Engine has Float8Tensor class
-# Float8Tensor is used in delayed scaling before TE2.1
-# Float8Tensor is used in delayed scaling and current scaling after TE2.1
-HAVE_TE_FLOAT8TENSOR = False
 try:
+    from packaging.version import Version as PkgVersion
+
+    HAVE_PACKAGING = True
+except ImportError:
+    HAVE_PACKAGING = False
+
+# Check if Transformer Engine has class for fp8 tensors.
+HAVE_TE_FP8_TENSOR_CLASS = False
+if HAVE_TE:
     if is_te_min_version("2.0"):
         # In TE2.x, QuantizedTensor is the base class for all different type of fp8 tensors,
         # including fp8 tensor for delayed scaling, current scaling and mxfp8, etc.
-        from transformer_engine.pytorch.tensor import QuantizedTensor as Float8Tensor
+        from transformer_engine.pytorch.tensor import QuantizedTensor as FP8_TENSOR_CLASS
     else:
-        from transformer_engine.pytorch.float8_tensor import Float8Tensor
+        from transformer_engine.pytorch.float8_tensor import Float8Tensor as FP8_TENSOR_CLASS
 
-    HAVE_TE_FLOAT8TENSOR = True
+    HAVE_TE_FP8_TENSOR_CLASS = True
+else:
+    HAVE_TE_FP8_TENSOR_CLASS = False
+    FP8_TENSOR_CLASS = None
+
+# Check if Transformer Engine has MXFP8Tensor class
+
+try:
+    from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Tensor
+
+    HAVE_TE_MXFP8TENSOR = True
 except (ImportError, ModuleNotFoundError):
-    # Float8Tensor not found
-    pass
+    # MXFP8Tensor not found
+    HAVE_TE_MXFP8TENSOR = False
 
 
 def is_float8tensor(tensor: torch.Tensor) -> bool:
-    """Check if a tensor is a Transformer Engine Float8Tensor"""
-    return HAVE_TE_FLOAT8TENSOR and isinstance(tensor, Float8Tensor)
+    """Check if a tensor is a Transformer Engine Float8Tensor.
+
+    Note that in TE2.x, in order to support more recipes, the design of the fp8 tensor class has
+    changed. Now Float8Tensor is only used for current scaling and delayed scaling. And mxfp8
+    and blockwise scaling have their own fp8 tensor classes. These different fp8 tensor classes
+    are both inherited from QuantizedTensor. So, for TE1.x, FP8_TENSOR_CLASS is Float8Tensor,
+    and for TE2.x, FP8_TENSOR_CLASS is QuantizedTensor.
+    """
+    return HAVE_TE_FP8_TENSOR_CLASS and isinstance(tensor, FP8_TENSOR_CLASS)
+
+
+def is_mxfp8tensor(tensor: torch.Tensor) -> bool:
+    """Check if a tensor is a Transformer Engine MXFP8Tensor"""
+    return HAVE_TE_MXFP8TENSOR and isinstance(tensor, MXFP8Tensor)
+
+
+def dequantize_fp8_tensor(fp8_tensor: torch.Tensor) -> torch.Tensor:
+    """Dequantize a fp8 tensor to a higher precision tensor."""
+    if is_te_min_version("2.0"):
+        return fp8_tensor.dequantize()
+    else:
+        return fp8_tensor.from_float8()
+
+
+def get_fp8_align_size(fp8_recipe: Fp8Recipe) -> int:
+    """Get the alignment size required for fp8 GEMM."""
+    if fp8_recipe == Fp8Recipe.mxfp8:
+        return 32
+    else:
+        return 16
 
 
 """
@@ -93,6 +137,10 @@ if HAVE_TE and is_te_min_version("2.2"):
 
         args = [model_params, main_params, start_offsets, data_parallel_group]
         if fsdp_shard_model_params is not None:
+            if not HAVE_PACKAGING:
+                raise ImportError(
+                    "packaging not found, please install it with `pip install packaging`"
+                )
             if get_te_version() == PkgVersion("2.3.0.dev0+5fdd7bb") or is_te_min_version("2.3.0"):
                 args.append(fsdp_shard_model_params)
             else:
@@ -174,7 +222,7 @@ elif HAVE_TE and is_te_min_version("2.0"):
             scale_invs.append(model_param._scale_inv.view(1))
             model_param._reset_caches()
 
-        dummy_overflow_buf = torch.tensor([0], dtype=torch.int, device='cuda')
+        dummy_overflow_buf = torch.tensor([0], dtype=torch.int, device="cuda")
 
         # Update scaling factors.
         packed_scales = torch.empty(len(scales), dtype=torch.float32, device=scales[0].device)
@@ -261,7 +309,7 @@ elif HAVE_TE and is_te_min_version("1.0"):
             scale_invs.append(model_param._scale_inv.view(1))
             model_param._reset_caches()
 
-        dummy_overflow_buf = torch.tensor([0], dtype=torch.int, device='cuda')
+        dummy_overflow_buf = torch.tensor([0], dtype=torch.int, device="cuda")
 
         # Update scaling factors.
         packed_scales = torch.empty(len(scales), dtype=torch.float32, device=scales[0].device)
@@ -284,9 +332,9 @@ elif HAVE_TE and is_te_min_version("1.0"):
         for model_module in model:
             for param in model_module.parameters():
                 if is_float8tensor(param) and param._fp8_meta is not None:
-                    fp8_meta = param._fp8_meta['scaling_fwd']
+                    fp8_meta = param._fp8_meta["scaling_fwd"]
                     fp8_meta_index = param._fp8_meta_index
-                    if hasattr(param, 'get_high_precision_init_val'):
+                    if hasattr(param, "get_high_precision_init_val"):
                         fp8_meta.amax_history[0][fp8_meta_index].copy_(
                             param.get_high_precision_init_val().abs().max()
                         )
@@ -298,8 +346,12 @@ else:
     def _modify_underlying_storage_impl(*args, **kwargs):
         raise RuntimeError("Invalid Transformer Engine version for FP8 distributed optimizer")
 
-    def _quantize_param_shard_impl(*args, **kwargs):
-        raise RuntimeError("Invalid Transformer Engine version for FP8 distributed optimizer")
+    def _quantize_param_shard_impl(model_params, *args, **kwargs):
+        if len(model_params) == 0:
+            return
+        else:
+            # If TE is not installed, there shouldn't be any fp8 params.
+            raise RuntimeError("Invalid Transformer Engine version for FP8 distributed optimizer")
 
     def _correct_amax_history_if_needed_impl(*args, **kwargs):
         # If TE is not installed, we are definitely not using fp8 for training, so no correction
@@ -331,7 +383,6 @@ def correct_amax_history_if_needed(model: List[torch.nn.Module]):
 
 if HAVE_TE:
     from megatron.core import parallel_state
-    from megatron.core.enums import Fp8Recipe
     from megatron.core.extensions.transformer_engine import TEDelayedScaling
 
     def get_fp8_context(config: TransformerConfig, layer_no: int = -1, is_init: bool = False):
@@ -392,14 +443,19 @@ if HAVE_TE:
                     fp8_recipe = transformer_engine.common.recipe.Float8CurrentScaling(
                         fp8_format=fp8_format
                     )
+                elif config.fp8_recipe == Fp8Recipe.blockwise and is_te_min_version("2.3.0.dev0"):
+                    fp8_recipe = transformer_engine.common.recipe.Float8BlockScaling(
+                        fp8_format=fp8_format
+                    )
                 elif config.fp8_recipe == Fp8Recipe.mxfp8:
                     fp8_recipe = transformer_engine.common.recipe.MXFP8BlockScaling(
                         fp8_format=fp8_format
                     )
                 else:
                     raise ValueError(
-                        "Float8CurrentScaling, MXFP8BlockScaling and DelayedScaling are "
-                        "the only supported FP8 recipes."
+                        "Float8CurrentScaling, MXFP8BlockScaling, Float8BlockwiseScaling and "
+                        "DelayedScaling are the only supported FP8 recipes. Please also make sure "
+                        "you are using a compatible TE version."
                     )
             else:
                 # Assert that the user is using delayed scaling.

@@ -14,6 +14,8 @@ from typing import Callable, Dict, Optional, Set, Tuple, Union
 
 import torch
 
+from megatron.core.msc_utils import MultiStorageClientFeature
+
 from . import ShardedTensor
 from .core import CheckpointingConfig, save_config
 from .dict_utils import extract_matching_values, merge
@@ -51,6 +53,8 @@ logger = logging.getLogger(__name__)
 
 # flat state dict with sharded objects without any data
 CkptShardedMetadata = Dict[str, Union[ShardedTensor, ShardedObject]]
+
+_CONTENT_METADATA_KEY = 'content_metadata'
 
 
 def load(
@@ -102,7 +106,6 @@ def load(
         checkpoint_dir, sharded_strategy, common_strategy
     )
 
-    checkpoint_dir = Path(checkpoint_dir)
     common_state_dict = common_strategy.load_common(checkpoint_dir)
 
     sharded_state_dict, nonpersistent_state_dict, sh_ten_factories = load_preprocess(
@@ -119,7 +122,7 @@ def load(
     strict = parse_strict_flag(strict)
     if StrictHandling.requires_explicit_ckpt_mismatch_check(strict):
         ckpt_sharded_metadata = load_sharded_metadata(
-            str(checkpoint_dir), sharded_strategy, common_strategy
+            checkpoint_dir, sharded_strategy, common_strategy  # type: ignore[arg-type]
         )
     if validate_access_integrity or StrictHandling.requires_global_app_metadata(strict):
         local_metadata, global_metadata = determine_global_metadata(sharded_state_dict)
@@ -156,16 +159,22 @@ def load(
         return common_state_dict
 
 
-def load_common_state_dict(checkpoint_dir: Path) -> StateDict:
+def load_common_state_dict(checkpoint_dir: Union[str, Path]) -> StateDict:
     """Load common (non-sharded) objects state dict from the checkpoint.
 
     Args:
-        checkpoint_dir (Path): checkpoint directory
+        checkpoint_dir (str): checkpoint directory
 
     Returns:
         StateDict: state dict with non-sharded objects from the checkpoint
     """
-    sharded_strategy, common_strategy = verify_checkpoint_and_load_strategy(str(checkpoint_dir))
+    if isinstance(checkpoint_dir, Path):
+        checkpoint_dir = str(checkpoint_dir)
+        logger.warning(
+            "DEPRECATED: Passing 'checkpoint_dir' as a Path object in load_common_state_dict will "
+            "no longer be supported in a future release. Please pass it as a string instead."
+        )
+    sharded_strategy, common_strategy = verify_checkpoint_and_load_strategy(checkpoint_dir)
     return common_strategy.load_common(checkpoint_dir)
 
 
@@ -235,10 +244,10 @@ def load_sharded_metadata(
     sharded_strategy, common_strategy = verify_checkpoint_and_load_strategy(
         checkpoint_dir, sharded_strategy, common_strategy
     )
-    sharded_metadata = sharded_strategy.load_sharded_metadata(Path(checkpoint_dir))
+    sharded_metadata = sharded_strategy.load_sharded_metadata(checkpoint_dir)
     if not sharded_strategy.can_handle_sharded_objects:
         validate_sharded_objects_handling(sharded_strategy, common_strategy)
-        common_metadata = common_strategy.load_sharded_metadata(Path(checkpoint_dir))
+        common_metadata = common_strategy.load_sharded_metadata(checkpoint_dir)
         sharded_metadata = merge(sharded_metadata, common_metadata)
     return sharded_metadata
 
@@ -260,23 +269,25 @@ def load_plain_tensors(checkpoint_dir: str) -> StateDict:
     return load(sharded_state_dict, checkpoint_dir, validate_access_integrity=False)
 
 
-#
-# def load_plain_tensors_and_objects(checkpoint_dir: str) -> StateDict:
-#     """Load checkpoint tensors and objects without any sharding and plain structure.
-#
-#     NOTE: state dict structure might be different than the one used for checkpoint saving.
-#     NOTE: common state dict is NOT included.
-#
-#     Args:
-#         checkpoint_dir (str): checkpoint directory to load the state dict from.
-#
-#     Returns:
-#         StateDict: complete checkpoint state dict without any sharding.
-#     """
-#     sharded_state_dict = load_tensors_metadata(checkpoint_dir)
-#     # Don't validate integrity because shards will be overlapped
-#     # if world_size > 1 (all processes load whole tensors)
-#     return load(sharded_state_dict, checkpoint_dir, validate_access_integrity=False)
+def load_content_metadata(
+    checkpoint_dir: Optional[str] = None, *, preloaded_state_dict: Optional[StateDict] = None
+) -> Optional[dict]:
+    """Load content metadata stored in the checkpoint with `save(..., content_metadata=...)`.
+
+    Args:
+        checkpoint_dir (str, optional): checkpoint directory to load the content metadata from.
+        preloaded_state_dict (StateDict, optional): if the state dict was already loaded,
+            can be provided to avoid double load from storage
+
+    Returns:
+        dict: checkpoint content metadata
+        None: in case there is no content metadata in the checkpoint
+    """
+    if preloaded_state_dict is None:
+        if checkpoint_dir is None:
+            raise ValueError('Both checkpoint_dir and loaded_state_dict cannot be None')
+        preloaded_state_dict = load_common_state_dict(checkpoint_dir)
+    return preloaded_state_dict.get(_CONTENT_METADATA_KEY)
 
 
 def remove_sharded_tensors(checkpoint_dir: str, key_prefix: str):
@@ -292,7 +303,10 @@ def save(
     common_strategy: Union[SaveCommonStrategy, Tuple[str, int], None] = None,
     validate_access_integrity: bool = True,
     async_sharded_save: bool = False,
-    preprocess_common_before_consistancy_check: Callable[[CommonStateDict], StateDict] = None,
+    preprocess_common_before_consistancy_check: Optional[
+        Callable[[CommonStateDict], StateDict]
+    ] = None,
+    content_metadata: Optional[dict] = None,
 ) -> Optional[AsyncRequest]:
     """Saving entrypoint.
 
@@ -336,21 +350,22 @@ def save(
             A callable function that will preprocess the common state dict (i.e can be used  to
             remove keys that we expect to be different in the state dict). The function must not
             modify the original state dict
+        content_metadata (dict, optional): metadata to identify the checkpoint content.
+            Useful for framework specific versioning.
 
     Returns:
         AsyncRequest (optional): if `async_sharded_save` is True, returns
             async request that should be scheduled by the caller of this function.
             None otherwise.
     """
-    checkpoint_dir = Path(checkpoint_dir)
-
     if torch.distributed.get_rank() == 0:
-        if not checkpoint_dir.exists():
-            raise CheckpointingException(
-                f'Checkpoint destination directory does not exist: {checkpoint_dir}'
-            )
+        if MultiStorageClientFeature.is_enabled():
+            msc = MultiStorageClientFeature.import_package()
+            checkpoint_dir_path = msc.Path(str(checkpoint_dir))
+        else:
+            checkpoint_dir_path = Path(checkpoint_dir)
 
-        if next(checkpoint_dir.iterdir(), None) is not None:
+        if next(checkpoint_dir_path.iterdir(), None) is not None:
             # Don't throw exception here since this could cause a cascade of failures
             # without human intervention in cases where multiple jobs are queued up.
             if torch.distributed.get_rank() == 0:
@@ -370,6 +385,9 @@ def save(
     if not isinstance(common_strategy, SaveCommonStrategy):
         assert isinstance(common_strategy, tuple), type(common_strategy)
         common_strategy = get_default_strategy(StrategyAction.SAVE_COMMON, *common_strategy)
+
+    if content_metadata is not None:
+        sharded_state_dict[_CONTENT_METADATA_KEY] = content_metadata
 
     sharded_state_dict, state_dict = save_preprocess(
         sharded_state_dict, validate_access_integrity, preprocess_common_before_consistancy_check
@@ -395,7 +413,7 @@ def save(
     if not async_sharded_save:
         sharded_strategy.save(sharded_state_dict, checkpoint_dir)
         metadata_finalize_fn()
-        return
+        return None
 
     if not isinstance(sharded_strategy, AsyncSaveShardedStrategy):
         raise CheckpointingException(

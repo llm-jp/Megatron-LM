@@ -92,7 +92,7 @@ class ModelMeta:
     """Basic information about a model.
 
     Args:
-        format (str): 'core', 'legacy', 'meta', 'hf', or 'llava'.
+        format (str): 'core', 'meta', 'hf', or 'llava'.
         mp (ModelParallelState): Defines TP, PP, EP.
         transformer_impl (str): 'transformer_engine' or 'local'.
     """
@@ -104,7 +104,7 @@ class ModelMeta:
         if transformer_impl is None:
             transformer_impl = "transformer_engine" if format in ("core", "llava") else "local"
 
-        assert format in ("core", "legacy", "meta", "hf", "llava")
+        assert format in ("core", "meta", "hf", "llava")
         assert isinstance(mp, ModelParallelState)
         assert transformer_impl in ("transformer_engine", "local")
 
@@ -205,10 +205,6 @@ class Pipeline:
         # Fail on missing checkpoint.
         if key == "dst":
             sys.argv.append("--exit-on-missing-checkpoint")
-
-        # Use legacy.
-        if meta.format == "legacy":
-            sys.argv.append("--use-legacy-models")
 
         # Parse args.
         args = parse_args()
@@ -384,6 +380,10 @@ class Pipeline:
 
         meta = self.get_meta(key)
 
+        # The test is only designed to work with single model
+        assert len(models) == 1
+        model = models[0]
+
         with torch.no_grad():
 
             # Randomly initialize all params.
@@ -392,14 +392,11 @@ class Pipeline:
                     p.normal_(0, 0.1)
 
             # Synchronize embeddings.
-            if meta.mp.pp != 1 and parallel_state.is_rank_in_embedding_group():
-                if parallel_state.is_pipeline_first_stage():
-                    emb = models[0].module.module.shared_embedding_or_output_weight()
-                elif parallel_state.is_pipeline_last_stage():
-                    emb = models[-1].module.module.shared_embedding_or_output_weight()
-                else:
-                    raise Exception("should be either first/last pipeline rank.")
-                torch.distributed.all_reduce(emb, group=parallel_state.get_embedding_group())
+            if meta.mp.pp != 1:
+                emb = model.module.module.shared_embedding_or_output_weight()
+                # Make embedding the same on ranks that has is
+                if emb is not None:
+                    torch.distributed.all_reduce(emb, group=parallel_state.get_embedding_group())
 
     def save_checkpoint(self):
         """Initialize params, forward pass data, and save checkpoint."""
@@ -810,10 +807,6 @@ class LLaVAPipeline(Pipeline):
         if key == "dst":
             sys.argv.append("--exit-on-missing-checkpoint")
 
-        # Use legacy.
-        if meta.format == "legacy":
-            sys.argv.append("--use-legacy-models")
-
         # Parse args.
         from examples.multimodal.multimodal_args import add_multimodal_extra_args
 
@@ -842,11 +835,8 @@ def get_gpt_pipelines():
         GPTPipeline(("core", (2, 4)), ("core", (4, 2))),
         GPTPipeline(("core", (1, 8)), ("core", (8, 1))),
         GPTPipeline(("core", (4, 2)), ("core", (2, 4), "local")),
-        GPTPipeline(("legacy", (4, 2)), ("core", (2, 4))),
         GPTPipeline(("core", (4, 2), "local"), ("core", (2, 4), "local")),
         GPTPipeline(("core", (4, 2), "local"), ("core", (2, 4))),
-        # [todo] GPTPipeline(("legacy", (4, 2)), ("legacy", (2, 4))),
-        # [todo] GPTPipeline(("legacy", (4, 2), "te"), ("legacy", (2, 4), "te")),
         # [todo] GPTPipeline("meta", "core", None, (8, 1)),
         # [todo] GPTPipeline("hf", "core", None, (8, 1)),
     ]

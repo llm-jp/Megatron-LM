@@ -3,17 +3,22 @@
 import concurrent
 import copy
 import functools
+import inspect
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, OrderedDict, Tuple, Union
 
 import torch
 import torch.nn.functional as F
 from torch import Tensor
+from torch.distributed import ProcessGroup
 
-from megatron.core import parallel_state
 from megatron.core.inference.async_stream import AsyncStream
-from megatron.core.inference.communication_utils import broadcast_from_last_pipeline_stage
-from megatron.core.inference.contexts import TokenOverflowError
+from megatron.core.inference.communication_utils import (
+    broadcast_from_last_pipeline_stage,
+    is_pipeline_first_stage,
+    is_pipeline_last_stage,
+)
+from megatron.core.inference.contexts.dynamic_context import MaxSequenceLengthOverflowError
 from megatron.core.inference.inference_request import InferenceRequest, Status
 from megatron.core.inference.model_inference_wrappers.abstract_model_inference_wrapper import (
     AbstractModelInferenceWrapper,
@@ -32,15 +37,23 @@ class TextGenerationController:
         inference_wrapped_model (AbstractModelInferenceWrapper): A model that
             is wrapped using the specs given in the abstract_model_inference_wrapper.py
         tokenizer (_type_): Tokenizer used for tokenizing and detokenizing the prompts
+        pp_group (ProcessGroup): Process group for pipeline parallelism
     """
 
-    def __init__(self, inference_wrapped_model: AbstractModelInferenceWrapper, tokenizer):
+    def __init__(
+        self,
+        inference_wrapped_model: AbstractModelInferenceWrapper,
+        tokenizer,
+        pp_group: ProcessGroup = None,
+    ):
         self.inference_wrapped_model = inference_wrapped_model
         self.tokenizer = tokenizer
 
+        self.pp_group = pp_group
+
         # For models without pipeline parallelism, is_first_stage and is_last_stage returns True
         self.model_is_pipeline_parallel = not (
-            parallel_state.is_pipeline_first_stage() and parallel_state.is_pipeline_last_stage()
+            is_pipeline_first_stage(self.pp_group) and is_pipeline_last_stage(self.pp_group)
         )
 
     def tokenize_prompt(
@@ -61,11 +74,42 @@ class TextGenerationController:
 
         return prompt_tokens
 
+    def _detokenize(self, tokens: list[int], skip_special_tokens: bool = True) -> str:
+        """
+        Detokenize a sequence of token IDs, handling skip_special_tokens for
+        different tokenizer APIs.
+
+        On the first call, inspects `self.tokenizer.detokenize` to see if it accepts
+        a `skip_special_tokens` keyword argument, and caches that result on `self`.
+        Subsequent calls will use the cached flag to invoke `detokenize` with the
+        correct signature (with or without `skip_special_tokens`).
+
+        Args:
+            tokens (List[int]): The token IDs to convert back to text.
+            skip_special_tokens (bool): Whether to remove special tokens (e.g. BOS/EOS)
+                during detokenization. Only passed through if the tokenizer supports it.
+
+        Returns:
+            str: The detokenized string.
+        """
+        # cache the check on first call
+        if not hasattr(self, "_detok_accepts_skip"):
+            sig_params = inspect.signature(self.tokenizer.detokenize).parameters.values()
+            self._detok_accepts_skip = any(
+                p.name == "skip_special_tokens" or p.kind == inspect.Parameter.VAR_KEYWORD
+                for p in sig_params
+            )
+        if self._detok_accepts_skip:
+            return self.tokenizer.detokenize(tokens, skip_special_tokens=skip_special_tokens)
+        else:
+            return self.tokenizer.detokenize(tokens)
+
     def detokenize_generations(
         self,
         tokens_gpu_tensor: torch.Tensor,
         lengths_gpu_tensor: torch.Tensor,
         detokenize_segments: bool,
+        skip_special_tokens: bool = True,
     ) -> tuple[str, Optional[List[List[str]]]]:
         """Detokenize the generated tokens.
 
@@ -75,6 +119,8 @@ class TextGenerationController:
             detokenize_segments (bool): If True, returns individually detokenized tokens. If False,
             returns None as second element. Helpful for understanding per-token boundaries in
             generated text.
+            skip_special_tokens (bool): If True removes special tokens like bos
+            during detokenization.
 
         Returns:
             tuple[str, List[str] | None]: A tuple containing:
@@ -84,19 +130,18 @@ class TextGenerationController:
         # TODO(helenn): Unify with `detokenize_generations` from legacy textgen path
 
         if not detokenize_segments:
-            tokens = tokens_gpu_tensor.cpu().numpy().tolist()
-            return self.tokenizer.detokenize(tokens), None
+            tokens = tokens_gpu_tensor.tolist()
+            return self._detokenize(tokens, skip_special_tokens=skip_special_tokens), None
 
         prompts_plus_generations: List[str] = []
         prompts_plus_generations_segments: List[List[str]] = []
-
         tokens_gpu_tensor = torch.unsqueeze(tokens_gpu_tensor, 0)
-        tokens = tokens_gpu_tensor.cpu().numpy().tolist()
-        lengths = lengths_gpu_tensor.cpu().numpy().tolist()
+        tokens = tokens_gpu_tensor.tolist()
+        lengths = lengths_gpu_tensor.tolist()
 
         for sequence_tokens, length in zip(tokens, lengths):
             sequence_tokens = sequence_tokens[:length]
-            detok_str = self.tokenizer.detokenize(sequence_tokens)
+            detok_str = self._detokenize(sequence_tokens)
             prompts_plus_generations.append(detok_str)
             offsets = self.tokenizer.offsets(sequence_tokens, detok_str)
             words = [
@@ -105,7 +150,7 @@ class TextGenerationController:
 
             prompts_plus_generations_segments.append(words)
 
-        text = self.tokenizer.detokenize(tokens[0])
+        text = self._detokenize(tokens[0], skip_special_tokens=skip_special_tokens)
 
         return text, prompts_plus_generations_segments
 
@@ -116,6 +161,7 @@ class TextGenerationController:
         vocab_size: Optional[int] = None,
         generation_started: Optional[torch.Tensor] = None,
         top_n_logprobs_dict: Dict[int, List[Dict[str, float]]] = None,
+        logits: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
         """Samples the logits to generate outputs
@@ -140,20 +186,22 @@ class TextGenerationController:
                 and indices as the top k elements. None if sampling params top_n_logprobs is 0.
         """
 
-        if kwargs.get('common_inference_params'):
-            sampling_params = kwargs['common_inference_params']
+        if kwargs.get("common_inference_params"):
+            sampling_params = kwargs["common_inference_params"]
 
         top_p = sampling_params.top_p
         top_k = sampling_params.top_k
         temperature = sampling_params.temperature
 
-        assert not (top_k > 0 and top_p > 0), 'Cannot have top-p and top-k both greater than zero'
-        assert top_p <= 1.0, 'top-p should be in (0,1]'
+        assert isinstance(top_p, float)
+        assert isinstance(top_k, int)
+        assert not (top_k > 0 and top_p > 0.0), "Cannot have top-p and top-k both greater than zero"
+        assert top_p <= 1.0, "top-p should be in (0,1]"
 
         def modify_logits_for_top_k_filtering(logits, top_k):
             """Set the logits for none top-k values to -inf."""
             filter_ = logits < torch.topk(logits, top_k)[0][..., -1, None]
-            logits.masked_fill_(filter_, float('-Inf'))
+            logits.masked_fill_(filter_, float("-Inf"))
 
         def modify_logits_for_top_p_filtering(logits, top_p):
             """Set the logits for none top-p values to -inf."""
@@ -173,21 +221,54 @@ class TextGenerationController:
 
             # Fill in the filtered part
             filter_ = filter_.scatter(1, sorted_indices, filter_)
-            logits.masked_fill_(filter_, float('-Inf'))
+            logits.masked_fill_(filter_, float("-Inf"))
 
         if sampling_params.top_n_logprobs > 0:
             # NOTE : This thing can also be clubbed with where we compute log probs
             # when --return-log-probs is enabled. This is just more efficient
-            log_exp_sum = torch.log(torch.exp(last_token_logits).sum(dim=1))
-            top_n_logits_this_step = torch.topk(last_token_logits, sampling_params.top_n_logprobs)
-            top_n_logprobs_this_step = top_n_logits_this_step.values - log_exp_sum.unsqueeze(dim=1)
-            top_n_logprobs_indices = top_n_logits_this_step.indices
-            self._update_top_n_logprobs_dict(
-                top_n_logprobs_this_step,
-                top_n_logprobs_indices,
-                generation_started,
-                top_n_logprobs_dict,
-            )
+            assert generation_started is not None
+            if logits is None:
+                batch_size = last_token_logits.shape[0]
+                last_token_log_probs = F.log_softmax(last_token_logits, dim=1).to(torch.float32)
+                top_n_logits_this_step = torch.topk(
+                    last_token_log_probs, k=sampling_params.top_n_logprobs
+                )
+                top_n_logprobs_this_step = top_n_logits_this_step.values.cpu()
+                top_n_logprobs_indices = top_n_logits_this_step.indices.cpu()
+
+                # If we return prompt top_n_log_probs then we always append to the
+                # logprobs dict. Otherwise we only append for generated tokens.
+                if sampling_params.return_prompt_top_n_logprobs:
+                    mask = torch.ones(batch_size, dtype=torch.bool)
+                else:
+                    mask = generation_started.cpu()
+
+                self._update_top_n_logprobs_dict(
+                    top_n_logprobs_this_step, top_n_logprobs_indices, mask, top_n_logprobs_dict
+                )
+            else:
+                assert sampling_params.return_prompt_top_n_logprobs
+
+                # Compute the prompt logprobs
+                batch_size, seq_length, _ = logits.shape
+                log_probs = F.log_softmax(logits, dim=2).to(torch.float32)
+                top_n_logits_this_step = torch.topk(log_probs, k=sampling_params.top_n_logprobs)
+
+                # Move the token dimension to the front and then add each token logprobs
+                # individually for every request in the batch
+                top_n_logprobs_this_step = top_n_logits_this_step.values.permute(1, 0, 2).cpu()
+                top_n_logprobs_indices = top_n_logits_this_step.indices.permute(1, 0, 2).cpu()
+
+                # We append to the logprobs dict for every prompt token
+                mask = torch.ones(batch_size, dtype=torch.bool)
+
+                for i in range(seq_length):
+                    self._update_top_n_logprobs_dict(
+                        top_n_logprobs_this_step[i],
+                        top_n_logprobs_indices[i],
+                        mask,
+                        top_n_logprobs_dict,
+                    )
 
         # Greedy sampling
         if top_k == 1:
@@ -197,9 +278,9 @@ class TextGenerationController:
             if temperature != 1.0:
                 last_token_logits.div_(temperature)
             if top_k > 1:
-                assert top_k <= last_token_logits.size(1), 'top-k is larger than logit size.'
+                assert top_k <= last_token_logits.size(1), "top-k is larger than logit size."
                 if vocab_size:
-                    assert top_k < vocab_size, 'top-k is larger than vocab size.'
+                    assert top_k < vocab_size, "top-k is larger than vocab size."
                 modify_logits_for_top_k_filtering(last_token_logits, top_k)
 
             elif top_p > 0.0:
@@ -213,6 +294,7 @@ class TextGenerationController:
             # If vocab size is provided, make sure the samples are in in the range [0, vocab-size).
             if vocab_size:
                 sampled_logits = torch.clamp(sampled_logits, min=0, max=(vocab_size - 1))
+
         return sampled_logits
 
     def update_generation_status(
@@ -292,6 +374,7 @@ class TextGenerationController:
 
         return tokens
 
+    @torch.inference_mode()
     def generate_output_tokens_dynamic_batch(
         self, sampling_params: SamplingParams, termination_id: int
     ) -> Optional[Tuple[Tensor, Tensor, Tensor]]:
@@ -317,17 +400,52 @@ class TextGenerationController:
         input_ids = context.current_input_ids()
         position_ids = context.current_position_ids()
 
+        # If using symmetric kernels and we are using using nccl
+        # for prefill turn off symmetric kernels
+        symmetric_ar_type = get_model_config(self.inference_wrapped_model.model).symmetric_ar_type
+        nccl_all_reduce_for_prefill = (
+            self.inference_wrapped_model.inference_wrapper_config.nccl_all_reduce_for_prefill
+        )
+
+        if nccl_all_reduce_for_prefill and symmetric_ar_type is not None:
+            if context.is_decode_only():
+                # Turn on symmetric all reduce when in decode mode
+                self.inference_wrapped_model.model.module.set_symmetric_ar(symmetric_ar_type)
+            else:
+                # Turn off symmetric all reduces for prefill
+                self.inference_wrapped_model.model.module.set_symmetric_ar(None)
+
         # Forward pass -> logits.
-        with torch.no_grad():
+        with torch.inference_mode():
             logits = self.inference_wrapped_model.run_one_forward_step(
                 {"tokens": input_ids, "position_ids": position_ids, "attention_mask": None}
+            )
+
+        if self.model_is_pipeline_parallel:
+            # In dynamic batching we assume sequence length 1
+            logits_seq_len = 1
+            batch_size = input_ids.shape[0]
+            vocab_size = self.inference_wrapped_model.inference_wrapper_config.padded_vocab_size
+            logits_shape = [batch_size, logits_seq_len, vocab_size]
+
+            if is_pipeline_last_stage(self.pp_group):
+                assert logits is not None and torch.Size(logits_shape) == logits.shape
+
+            logits = broadcast_from_last_pipeline_stage(
+                logits_shape,
+                dtype=self.inference_wrapped_model.inference_wrapper_config.params_dtype,
+                tensor=logits,
+                pp_group=self.pp_group,
             )
 
         last_token_logits = logits.squeeze(0)
 
         # Sample.
+        # Use padded vocab size because tokenizer vocab size might not include padding
+        # to nearest power of 2.
+        vocab_size = self.inference_wrapped_model.inference_wrapper_config.padded_vocab_size
         new_sample = self.sample_from_logits(
-            last_token_logits, sampling_params, vocab_size=self.tokenizer.vocab_size
+            last_token_logits, sampling_params, vocab_size=vocab_size
         )
 
         # Active sequence lengths.
@@ -349,7 +467,8 @@ class TextGenerationController:
         finished_request_ids = context.request_ids[finished_idxs]
 
         # Update requests.
-        context.update_requests(active_request_mask, new_sample)
+        # New sample gets updated in update_requests, so we pass in a clone
+        context.update_requests(active_request_mask, new_sample.clone())
 
         return current_request_ids, finished_request_ids, new_sample
 
@@ -357,7 +476,7 @@ class TextGenerationController:
         self,
         top_n_logprobs_this_step: torch.Tensor,
         top_n_logprobs_indices: torch.Tensor,
-        generation_started: torch.Tensor,
+        mask: torch.Tensor,
         top_n_logprobs_dict: Dict[int, List[Dict[str, float]]],
     ):
         """Function to update the top_n_logprobs at each step
@@ -371,20 +490,20 @@ class TextGenerationController:
         Args:
             top_n_logprobs_this_step (torch.Tensor): The top n logprob values
             top_n_logprobs_indices (torch.Tensor): The indices corresponding to the top n logprobs
-            generation_started (torch.Tensor): A boolean tensor of shape [batch_size]. True
-                            indicates the prompt at that index has started generating tokens.
+            mask (torch.Tensor): A mask to indicate which requests should append to the dict
             top_n_logprobs_dict (top_n_logprobs_dict): The dict to be updated
         """
         for batch_idx, (logprob_values, logprob_indices) in enumerate(
             zip(top_n_logprobs_this_step, top_n_logprobs_indices)
         ):
-            logit_dict = {}
-            if generation_started[batch_idx]:
+            if mask[batch_idx]:
+                logit_dict = {}
                 for logprob, logprob_index in zip(logprob_values, logprob_indices):
-                    key = self.tokenizer.detokenize([logprob_index])
+                    key = self.tokenizer.detokenize([logprob_index.item()])
                     logit_dict[key] = logprob.item()
-            top_n_logprobs_dict[batch_idx].append(logit_dict)
+                top_n_logprobs_dict[batch_idx].append(logit_dict)
 
+    @torch.inference_mode()
     def generate_all_output_tokens_static_batch(
         self,
         active_requests: OrderedDict[str, InferenceRequest],
@@ -421,6 +540,14 @@ class TextGenerationController:
         # For batch inference the sampling params are the same for all request
         sampling_params: SamplingParams = list(active_requests.values())[0].sampling_params
 
+        # Verify that if echo mode is requested we do not generate any new tokens
+        echo = getattr(sampling_params, "echo", False)
+        assert (
+            not echo or sampling_params.num_tokens_to_generate == 0
+        ), f"Cannot generate new tokens when echoing"
+        if sampling_params.num_tokens_to_generate == 0 and not echo:
+            sampling_params.add_attributes({"echo": True})
+
         # Check whether CUDA graphs are enabled
         enable_cuda_graph = get_model_config(self.inference_wrapped_model.model).enable_cuda_graph
 
@@ -434,18 +561,15 @@ class TextGenerationController:
             self.inference_wrapped_model.inference_wrapper_config.inference_max_seq_length
         )
         padded_batch_size = inference_max_batch_size if enable_cuda_graph else batch_size
-        padded_sequence_length = (
-            inference_max_sequence_length if enable_cuda_graph else max_sequence_length
-        )
         padded_batch_prompt_tokens = self.pad_input_prompt_tokens(
             batch_prompt_tokens_list,
             padded_batch_size=padded_batch_size,
-            padded_sequence_length=padded_sequence_length,
+            padded_sequence_length=max_sequence_length,
         )
 
         # Verify that output sequence length is within configured limit
         if max_sequence_length > inference_max_sequence_length:
-            raise TokenOverflowError(
+            raise MaxSequenceLengthOverflowError(
                 f"Maximum allowed sequence length was set to {inference_max_sequence_length} "
                 f"tokens but requested generation of {max_sequence_length} tokens"
             )
@@ -492,8 +616,7 @@ class TextGenerationController:
             streaming_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             stream_tokens = functools.partial(self.stream_tokens, sampling_params)
 
-        with torch.no_grad():
-
+        with torch.inference_mode():
             self.inference_wrapped_model.prep_model_for_inference()
 
             inference_input: Dict[str, Any] = self.prep_inference_input(
@@ -504,10 +627,22 @@ class TextGenerationController:
                 not self.inference_wrapped_model.inference_context.is_decode_only()
             ), f"Generation must start in prefill mode"
 
-            context_start_position = 0
-            # Pick the context window that we need to pass through the network.
-            for context_end_position in range(min_prompt_length_in_batch, max_sequence_length):
+            # If using symmetric kernels and we are using using nccl
+            # for prefill turn off symmetric kernels
+            symmetric_ar_type = get_model_config(
+                self.inference_wrapped_model.model
+            ).symmetric_ar_type
+            nccl_all_reduce_for_prefill = (
+                self.inference_wrapped_model.inference_wrapper_config.nccl_all_reduce_for_prefill
+            )
+            if symmetric_ar_type is not None and nccl_all_reduce_for_prefill:
+                self.inference_wrapped_model.model.module.set_symmetric_ar(None)
 
+            context_start_position = 0
+            context_end_position = min_prompt_length_in_batch
+
+            while True:
+                # Pick the context window that we need to pass through the network.
                 inference_input_for_context_window: Dict[str, Any] = (
                     self.inference_wrapped_model.get_batch_for_context_window(
                         inference_input, context_start_position, context_end_position
@@ -525,7 +660,7 @@ class TextGenerationController:
                 # Only materialize prompt log probs if the user requests log probs
                 materialize_only_last_token_logits = (
                     self.inference_wrapped_model.inference_context.is_decode_only()
-                    or not sampling_params.return_log_probs
+                    or not (sampling_params.return_log_probs or sampling_params.top_n_logprobs > 0)
                 )
                 inference_context = self.inference_wrapped_model.inference_context
                 inference_context.materialize_only_last_token_logits = (
@@ -541,7 +676,7 @@ class TextGenerationController:
                 if enable_cuda_graph:
                     # Undo padding up to maximum batch size if necessary
                     batch_prompt_tokens = padded_batch_prompt_tokens[:batch_size]
-                    if parallel_state.is_pipeline_last_stage():
+                    if is_pipeline_last_stage(self.pp_group):
                         logits = logits[:batch_size]
 
                     create_cudagraphs()
@@ -552,33 +687,58 @@ class TextGenerationController:
                     context_length = context_end_position - context_start_position
                     logits_seq_len = 1 if materialize_only_last_token_logits else context_length
                     logits_shape = [batch_size, logits_seq_len, vocab_size]
-                    if parallel_state.is_pipeline_last_stage():
+                    if is_pipeline_last_stage(self.pp_group):
                         assert logits is not None and torch.Size(logits_shape) == logits.shape
                     logits = broadcast_from_last_pipeline_stage(
                         [batch_size, logits_seq_len, vocab_size],
                         dtype=self.inference_wrapped_model.inference_wrapper_config.params_dtype,
                         tensor=logits,
+                        pp_group=self.pp_group,
                     )
+
+                # Turn on symmetric all reduce kernels for decode stage
+                # if we turned it off for prefill
+                if (
+                    context_end_position == min_prompt_length_in_batch
+                    and symmetric_ar_type is not None
+                    and nccl_all_reduce_for_prefill
+                ):
+                    if symmetric_ar_type is not None and nccl_all_reduce_for_prefill:
+                        self.inference_wrapped_model.model.module.set_symmetric_ar(
+                            symmetric_ar_type
+                        )
+
                 # Indicates which of the input prompts have started generating tokens.
                 # A 1D boolean tensor with [batch_size] elements (i.e) The shortest
                 # prompts will start generating first and so on
                 generation_started = prompt_lengths_in_batch <= context_end_position
                 last_token_logits = logits[:, -1, :]
+
+                logits_for_top_n_prompt_logprobs = (
+                    logits
+                    if context_start_position == 0 and sampling_params.return_prompt_top_n_logprobs
+                    else None
+                )
                 sampled_logits = self.sample_from_logits(
                     last_token_logits,
                     sampling_params,
                     vocab_size,
-                    generation_started,
-                    top_n_logprobs_dict,
+                    generation_started=generation_started,
+                    top_n_logprobs_dict=top_n_logprobs_dict,
+                    logits=logits_for_top_n_prompt_logprobs,
                 )
 
-                # Substitute the sampled logits only for the prompts that
-                # have started generating tokens
-                batch_prompt_tokens[generation_started, context_end_position] = sampled_logits[
-                    generation_started
-                ]
+                if sampling_params.num_tokens_to_generate > 0:
+                    # Substitute the sampled logits only for the prompts that
+                    # have started generating tokens
+                    batch_prompt_tokens[generation_started, context_end_position] = sampled_logits[
+                        generation_started
+                    ]
+
+                # Compute log probs
                 if sampling_params.return_log_probs:
-                    log_probs = F.log_softmax(logits, dim=2)
+                    log_probs = F.log_softmax(logits, dim=2).to(torch.float32)
+
                     indices = torch.unsqueeze(
                         batch_prompt_tokens[
                             :, (context_start_position + 1) : (context_end_position + 1)
@@ -593,36 +753,37 @@ class TextGenerationController:
 
                 context_start_position = context_end_position
 
-                # Check end of generation status for each tensor
-                # and update generated sequence lengths
-                (is_generation_done_tensor, generated_sequence_lengths) = (
-                    self.update_generation_status(
-                        updated_prompts_tokens=batch_prompt_tokens,
-                        generation_started=generation_started,
-                        current_context_end_position=context_end_position,
-                        is_generation_done_tensor=is_generation_done_tensor,
-                        generated_sequence_lengths=generated_sequence_lengths,
+                if sampling_params.num_tokens_to_generate > 0:
+                    # Check end of generation status for each tensor
+                    # and update generated sequence lengths
+                    (is_generation_done_tensor, generated_sequence_lengths) = (
+                        self.update_generation_status(
+                            updated_prompts_tokens=batch_prompt_tokens,
+                            generation_started=generation_started,
+                            current_context_end_position=context_end_position,
+                            is_generation_done_tensor=is_generation_done_tensor,
+                            generated_sequence_lengths=generated_sequence_lengths,
+                        )
                     )
-                )
 
-                # Stream intermediate outputs
-                if streaming_enabled:
-                    streaming_executor.submit(
-                        stream_tokens,
-                        streaming_request_ids,
-                        streaming_requests,
-                        streams,
-                        generation_started[streaming_idx].cpu(),
-                        is_generation_done_tensor[streaming_idx].cpu(),
-                        batch_prompt_tokens[streaming_idx].cpu(),
-                        prompt_lengths_in_batch[streaming_idx].cpu(),
-                        generated_sequence_lengths[streaming_idx].cpu(),
-                        (
-                            output_log_probs[streaming_idx].cpu()
-                            if output_log_probs is not None
-                            else [None] * len(streaming_idx)
-                        ),
-                    )
+                    # Stream intermediate outputs
+                    if streaming_enabled:
+                        streaming_executor.submit(
+                            stream_tokens,
+                            streaming_request_ids,
+                            streaming_requests,
+                            streams,
+                            generation_started[streaming_idx].cpu(),
+                            is_generation_done_tensor[streaming_idx].cpu(),
+                            batch_prompt_tokens[streaming_idx].cpu(),
+                            prompt_lengths_in_batch[streaming_idx].cpu(),
+                            generated_sequence_lengths[streaming_idx].cpu(),
+                            (
+                                output_log_probs[streaming_idx].cpu()
+                                if output_log_probs is not None
+                                else [None] * len(streaming_idx)
+                            ),
+                        )
 
                 # Boolean flag indicating if all prompts are finished
                 all_prompts_done = torch.all(is_generation_done_tensor)
@@ -632,6 +793,10 @@ class TextGenerationController:
                 # Change to decode mode if all prefill is complete
                 if torch.all(generation_started):
                     self.inference_wrapped_model.inference_context.enable_decode_mode()
+
+                context_end_position = context_start_position + 1
+                if context_end_position >= max_sequence_length:
+                    break
 
         # Close all streams
         if streaming_enabled:
@@ -666,31 +831,43 @@ class TextGenerationController:
             request.generated_length = required_sequence_length
             request.generated_tokens = required_result_tokens
 
-            request.prompt_log_probs = (
-                None
-                if output_log_probs is None
-                else output_log_probs[idx, : input_prompt_length - 1].cpu().numpy().tolist()
-            )
-            if sampling_params.top_n_logprobs > 0:
-                request.generated_top_n_logprobs = top_n_logprobs_dict[idx][
-                    :required_sequence_length
-                ]
-
-            request.generated_log_probs = (
-                None
-                if output_log_probs is None
-                else output_log_probs[
+            if output_log_probs is not None:
+                request.prompt_log_probs = output_log_probs[idx, : input_prompt_length - 1].tolist()
+                request.generated_log_probs = output_log_probs[
                     idx,
                     input_prompt_length - 1 : (input_prompt_length + required_sequence_length - 1),
-                ]
-                .cpu()
-                .numpy()
-                .tolist()
-            )
+                ].tolist()
+            if sampling_params.top_n_logprobs > 0:
+                if sampling_params.return_prompt_top_n_logprobs:
+                    assert (
+                        len(top_n_logprobs_dict[idx])
+                        >= input_prompt_length + required_sequence_length - 1
+                    ), (
+                        "Did not collect required number of top-N logprobs: "
+                        f"{len(top_n_logprobs_dict[idx])}"
+                    )
+                    request.prompt_top_n_logprobs = top_n_logprobs_dict[idx][
+                        : input_prompt_length - 1
+                    ]
+                    request.generated_top_n_logprobs = top_n_logprobs_dict[idx][
+                        input_prompt_length
+                        - 1 : (input_prompt_length + required_sequence_length - 1)
+                    ]
+                else:
+                    assert len(top_n_logprobs_dict[idx]) >= required_sequence_length, (
+                        "Did not collect required number of top-N logprobs: "
+                        f"{len(top_n_logprobs_dict[idx])}"
+                    )
+                    request.generated_top_n_logprobs = top_n_logprobs_dict[idx][
+                        :required_sequence_length
+                    ]
+
             request.status = Status.COMPLETED
 
             text, segments = self.detokenize_generations(
-                batch_prompt_tokens_with_generations[idx],
+                batch_prompt_tokens_with_generations[
+                    idx, : (input_prompt_length + required_sequence_length)
+                ],
                 input_prompt_length + generated_sequence_lengths,
                 sampling_params.return_segments,
             )
@@ -755,10 +932,13 @@ class TextGenerationController:
         ):
             """Asynchronously streams a token for the given request."""
 
-            if not generation_started or stream.finished:
+            if (
+                not generation_started
+                or stream.finished
+                or sampling_params.num_tokens_to_generate == 0
+            ):
                 return
 
-            num_tokens_to_generate = sampling_params.num_tokens_to_generate
             return_segments = sampling_params.return_segments
             detokenize_streaming_text = not getattr(
                 sampling_params, "no_detokenize_streaming_text", False
@@ -775,12 +955,9 @@ class TextGenerationController:
                 generated_segments = []
 
             if output_log_probs is not None:
-                generated_log_probs = (
-                    output_log_probs[prompt_length - 1 : prompt_length + generated_length - 1]
-                    .cpu()
-                    .numpy()
-                    .tolist()
-                )
+                generated_log_probs = output_log_probs[
+                    prompt_length - 1 : prompt_length + generated_length - 1
+                ].tolist()
             else:
                 generated_log_probs = None
 
@@ -801,7 +978,7 @@ class TextGenerationController:
                 )
             )
 
-            if is_generation_done or generated_length == num_tokens_to_generate:
+            if is_generation_done or generated_length == sampling_params.num_tokens_to_generate:
                 stream.finish()
 
         ret = map(

@@ -10,13 +10,14 @@ import torch
 from tqdm import tqdm
 
 from megatron.core import parallel_state
-from megatron.core.inference.contexts import (
+from megatron.core.inference.contexts.dynamic_context import (
     ChunkOverflowError,
     DynamicInferenceContext,
     RequestOverflowError,
     TokenOverflowError,
 )
 from megatron.core.inference.engines import DynamicInferenceEngine
+from megatron.core.inference.inference_request import Status
 from megatron.core.inference.model_inference_wrappers.gpt.gpt_inference_wrapper import (
     GPTInferenceWrapper,
 )
@@ -34,7 +35,12 @@ from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.utils import is_fa_min_version
 from tests.unit_tests.test_utilities import Utils
 
-DynamicInferenceContext.ROUNDER = 4  # decreased from 64 for unit tests.
+
+def set_rounder(value):
+    """Utility function to set the DynamicInferenceContext rounder."""
+    DynamicInferenceContext.ROUNDER = value  # For backwards compatibility
+    DynamicInferenceContext.TOKEN_ROUNDER = value
+    DynamicInferenceContext.REQUEST_ROUNDER = value
 
 
 class Request:
@@ -58,16 +64,19 @@ class Request:
 class TestConfig:
     """Test configuration args."""
 
-    num_requests: int = 2 * DynamicInferenceContext.round_up(1)
+    set_rounder(4)
+    num_requests: int = 2 * DynamicInferenceContext.round_up_requests(1)
     max_prompt_length: int = 16
     max_output_length: int = 4
     num_gap_steps: int = 2
 
     context_buffer_size_gb: float = 0.1  # enough room for all tokens.
+    context_chunk_size_tokens: int = 256
     context_buffer_guaranteed_fraction: float = 0.01
     context_buffer_overflow_factor: Optional[float] = None
     context_max_requests_override: Optional[int] = None
     context_max_tokens_override: Optional[int] = None
+    tensor_model_parallel_size: int = 1
 
     use_fixed_output_lengths: bool = False
 
@@ -144,15 +153,23 @@ class TestDynamicInferenceEngine:
             max_sequence_length=max_sequence_length,
             buffer_size_gb=test_config.context_buffer_size_gb,
             buffer_guaranteed_fraction=test_config.context_buffer_guaranteed_fraction,
+            chunk_size_tokens=test_config.context_chunk_size_tokens,
             buffer_overflow_factor=test_config.context_buffer_overflow_factor,
             max_requests_override=test_config.context_max_requests_override,
             max_tokens_override=test_config.context_max_tokens_override,
+            tensor_model_parallel_size=transformer_config.tensor_model_parallel_size,
         )
 
         return context
 
     @classmethod
     def _build_test_env(cls, test_config):
+        Utils.initialize_model_parallel(
+            tensor_model_parallel_size=test_config.tensor_model_parallel_size,
+            pipeline_model_parallel_size=1,
+        )
+
+        set_rounder(4)
 
         random_seed = 123
         vocab_size = 100
@@ -166,9 +183,10 @@ class TestDynamicInferenceEngine:
         transformer_config = TransformerConfig(
             params_dtype=torch.bfloat16,
             num_layers=4,
-            hidden_size=12,
+            hidden_size=32,
             num_attention_heads=4,
             use_cpu_initialization=True,
+            tensor_model_parallel_size=test_config.tensor_model_parallel_size,
         )
 
         # Requests.
@@ -239,27 +257,32 @@ class TestDynamicInferenceEngine:
             config=test_config, sampling_params=sampling_params, requests=requests, engine=engine
         )
 
+        # Mock the detokenize method to return predictable result
+        def mock_detokenize_prompt(tokens):
+            return "tokenized_prompt"
+
+        env.engine.controller.tokenizer.detokenize = mock_detokenize_prompt
+
         return env
 
     @classmethod
     def _run_step(cls, env):
-
+        set_rounder(4)
         # Step inference engine (i.e., generate one token per request).
-        result, step_time = env.engine.step(env.sampling_params, verbose=False)
+        result = env.engine.step(env.sampling_params, verbose=False)
+        if len(result) == 3:
+            result = result[1:]
+        finished_requests = result[0]
 
         # Nothing done?
-        if result is None:
+        if len(finished_requests) == 0:
             return
 
         # Append output tokens.
-        request_ids, finished_request_ids, sample = result
-        request_ids = request_ids.tolist()
-        sample = sample.tolist()
-        for request_id, token in zip(request_ids, sample):
-            request = env.requests[request_id]
-            request.output.append(token)
-            if request_id in finished_request_ids:
-                request.state = "finished"
+        for finished_request in finished_requests:
+            request = env.requests[finished_request.request_id]
+            request.output = finished_request.generated_tokens
+            request.state = "finished"
 
     @classmethod
     def _run_test(cls, **test_config_kwargs):
@@ -304,12 +327,8 @@ class TestDynamicInferenceEngine:
 
         return env
 
-    def setup_method(self, method):
-        Utils.initialize_model_parallel(
-            tensor_model_parallel_size=1, pipeline_model_parallel_size=1
-        )
-
     def teardown_method(self, method):
+        set_rounder(64)
         Utils.destroy_model_parallel()
 
     @pytest.mark.experimental
@@ -328,13 +347,13 @@ class TestDynamicInferenceEngine:
 
         # Validate output tokens.
         expected_outputs = [
-            [69, 85, 55, 74, 85, 78],
-            [29, 16, 33, 30, 45, 76, 41, 56, 28, 17, 17, 2, 61, 6, 20],
-            [35, 78, 64, 59, 33, 67, 15, 58, 6, 49],
-            [54, 16, 79, 98, 22, 5, 60, 0, 1, 24],
+            [69, 85, 55, 74, 85, 89],
+            [29, 54, 33, 30, 45, 76, 41, 56, 28, 25, 17, 2, 61, 6, 98],
+            [35, 78, 64, 59, 55, 67, 15, 58, 6, 37],
+            [54, 16, 79, 98, 22, 5, 60, 0, 1, 76],
             [57, 85, 81, 37, 88, 17, 71, 15, 70, 64, 50, 0],
-            [85, 75, 30, 68, 23, 33, 20, 76, 69, 36, 37, 99],
-            [32, 49, 54, 47, 22, 1, 87, 30, 36, 97],
+            [85, 75, 30, 68, 23, 33, 20, 76, 97, 36, 37, 99],
+            [32, 49, 54, 47, 22, 1, 87, 30, 36, 26],
             [93, 24, 77, 11, 25, 7, 92, 97, 27, 56, 82],
         ]
 
@@ -348,7 +367,6 @@ class TestDynamicInferenceEngine:
     )
     def test_overflow_factor(self) -> None:
         """Test overflow factor arg."""
-
         # Run test.
         env = self._run_test(
             context_buffer_overflow_factor=0.1,
@@ -357,8 +375,8 @@ class TestDynamicInferenceEngine:
         )
 
         # Validate max_requests, max_tokens.
-        assert env.engine.context.max_requests == 1120
-        assert env.engine.context.max_tokens == 1120
+        assert env.engine.context.max_requests == 420
+        assert env.engine.context.max_tokens == 420
 
     @pytest.mark.experimental
     @pytest.mark.skipif(
@@ -366,41 +384,32 @@ class TestDynamicInferenceEngine:
     )
     def test_request_overflow(self) -> None:
         """Test request overflow."""
-        try:
-            env = self._run_test(context_max_requests_override=1)
-        except RequestOverflowError as e:
-            return
-        raise Exception("failed.")
+        self._run_test(context_max_requests_override=1)
 
-    @pytest.mark.experimental
     @pytest.mark.skipif(
         not is_fa_min_version("2.7.3"), reason="need latest flash attn for dynamic batching"
     )
     def test_token_overflow(self) -> None:
         """Test token overflow."""
-        try:
-            self._run_test(context_max_tokens_override=8)
-        except TokenOverflowError as e:
-            return
-        raise Exception("failed.")
+        test_config = TestConfig(context_max_tokens_override=8)
+        env = self._build_test_env(test_config)
+        env.engine.add_request(0, env.requests[0].prompt, env.requests[0].num_tokens_to_generate)
+        assert list(env.engine.waiting_request_ids) == [0]
 
-    @pytest.mark.experimental
     @pytest.mark.skipif(
         not is_fa_min_version("2.7.3"), reason="need latest flash attn for dynamic batching"
     )
     def test_chunk_overflow(self) -> None:
-        """Test chunk overflow."""
+        """Test token overflow."""
         env = self._build_test_env(TestConfig())
         context = env.engine.context
         chunk_size_bytes = context.chunk_size_bytes
-        buffer_size_gb = (chunk_size_bytes + 1) / 1024**3  # +1 for rounding error.
-        try:
-            self._run_test(context_buffer_size_gb=buffer_size_gb)
-        except ChunkOverflowError as e:
-            return
-        raise Exception("failed.")
+        buffer_size_gb = (chunk_size_bytes + 1) / 1024**3
+        test_config = TestConfig(context_buffer_size_gb=buffer_size_gb)
+        env = self._build_test_env(test_config)
+        env.engine.add_request(0, env.requests[0].prompt, env.requests[0].num_tokens_to_generate)
+        assert list(env.engine.waiting_request_ids) == [0]
 
-    @pytest.mark.experimental
     @pytest.mark.skipif(
         not is_fa_min_version("2.7.3"), reason="need latest flash attn for dynamic batching"
     )
@@ -408,10 +417,43 @@ class TestDynamicInferenceEngine:
         """Test adding multiple requests simultaneously."""
         self._run_test(num_gap_steps=0)
 
-    @pytest.mark.experimental
     @pytest.mark.skipif(
         not is_fa_min_version("2.7.3"), reason="need latest flash attn for dynamic batching"
     )
     def test_fixed_output_lengths(self) -> None:
         """Test generating a fixed number of output tokens."""
         self._run_test(use_fixed_output_lengths=True)
+
+    @pytest.mark.skipif(
+        not is_fa_min_version("2.7.3"), reason="need latest flash attn for dynamic batching"
+    )
+    def test_generate_function(self) -> None:
+        """Test the generate function that processes multiple prompts at once."""
+        # Set up test environment
+        test_config = TestConfig(num_requests=4, max_prompt_length=8, max_output_length=4)
+        env = self._build_test_env(test_config)
+
+        # Create string prompts (just mock strings, since the test environment mocks the tokenizer)
+        prompts = ["prompt1", "prompt2", "prompt3", "prompt4"]
+
+        # Mock the tokenize_prompt method to return predictable token sequences
+        def mock_tokenize_prompt(prompt):
+            # Return a token sequence based on the prompt number
+            prompt_num = int(prompt[-1])
+            return [10 + i for i in range(prompt_num + 2)]
+
+        env.engine.controller.tokenize_prompt = mock_tokenize_prompt
+
+        # Call the generate function
+        finished_requests = env.engine.generate(prompts, env.sampling_params)
+
+        # Verify results
+        assert len(finished_requests) == len(
+            prompts
+        ), "Should return same number of finished requests as prompts"
+        print()
+        # Check each request was processed
+        for i, request in enumerate(finished_requests):
+            # Verify each request has generated tokens
+            assert len(request.generated_tokens) > 0, f"Request {i} should have generated tokens"
+            assert request.status == Status.COMPLETED, f"Request {i} should be completed"

@@ -10,6 +10,8 @@ from megatron.core.inference.contexts import BaseInferenceContext
 from megatron.core.models.common.embeddings.language_model_embedding import LanguageModelEmbedding
 from megatron.core.models.common.embeddings.rotary_pos_embedding import RotaryEmbedding
 from megatron.core.models.common.language_module.language_module import LanguageModule
+from megatron.core.process_groups_config import ModelCommProcessGroups
+from megatron.core.quantization.utils import get_quant_config_or_none
 from megatron.core.transformer import TransformerConfig
 from megatron.core.transformer.enums import ModelType
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
@@ -47,6 +49,7 @@ class MambaModel(LanguageModule):
         seq_len_interpolation_factor (Optional[float], optional): scale of linearly
             interpolating RoPE for longer sequences. The value must be a float larger than 1.0.
              Defaults to None.
+        model_comm_pgs (ModelCommProcessGroups, optional): Model communication process groups.
     """
 
     def __init__(
@@ -69,6 +72,7 @@ class MambaModel(LanguageModule):
         rotary_base: int = 10000,
         scatter_embedding_sequence_parallel: bool = True,
         seq_len_interpolation_factor: Optional[float] = None,
+        model_comm_pgs: Optional[ModelCommProcessGroups] = None,
     ) -> None:
         super().__init__(config=config)
 
@@ -88,6 +92,11 @@ class MambaModel(LanguageModule):
         self.share_embeddings_and_output_weights = share_embeddings_and_output_weights
         self.position_embedding_type = position_embedding_type
 
+        if model_comm_pgs is None:
+            model_comm_pgs = ModelCommProcessGroups.use_mpu_process_groups(
+                required_pgs=['tp', 'pp', 'cp', 'tp_cp', 'ep', 'expt_tp', 'tp_ep', 'expt_dp']
+            )
+
         # megatron core pipelining currently depends on model type
         # TODO: remove this dependency ?
         self.model_type = ModelType.encoder_or_decoder
@@ -99,6 +108,7 @@ class MambaModel(LanguageModule):
                 max_sequence_length=self.max_sequence_length,
                 position_embedding_type=position_embedding_type,
                 scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
+                tp_group=model_comm_pgs.tp,
             )
 
         if self.position_embedding_type == 'rope':
@@ -108,6 +118,7 @@ class MambaModel(LanguageModule):
                 seq_len_interpolation_factor=seq_len_interpolation_factor,
                 rotary_base=rotary_base,
                 use_cpu_initialization=self.config.use_cpu_initialization,
+                cp_group=model_comm_pgs.cp,
             )
 
         self.decoder = build_module(
@@ -119,6 +130,7 @@ class MambaModel(LanguageModule):
             hybrid_override_pattern=self.hybrid_override_pattern,
             post_process=self.post_process,
             dtype=config.params_dtype,
+            model_comm_pgs=model_comm_pgs,
         )
 
         # Output
@@ -133,10 +145,16 @@ class MambaModel(LanguageModule):
                 gather_output=not self.parallel_output,
                 skip_weight_param_allocation=self.pre_process
                 and self.share_embeddings_and_output_weights,
+                tp_group=model_comm_pgs.tp,
             )
 
         if self.pre_process or self.post_process:
             self.setup_embeddings_and_output_layer()
+
+        for name, module in self.named_modules():
+            if hasattr(module, 'finish_init'):
+                quant_config = get_quant_config_or_none(name, self.config.quant_recipe)
+                module.finish_init(quant_config)
 
     def set_input_tensor(self, input_tensor: Tensor) -> None:
         """Sets input tensor to the model.

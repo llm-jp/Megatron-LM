@@ -1,5 +1,6 @@
 # Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
 
+import warnings
 from dataclasses import dataclass
 from typing import Optional, Union
 
@@ -19,6 +20,18 @@ from megatron.core.fusions.fused_bias_swiglu import bias_swiglu_impl, weighted_b
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
 from megatron.core.transformer.transformer_config import TransformerConfig
+from megatron.core.utils import (
+    get_tensor_model_parallel_group_if_none,
+    nvtx_range_pop,
+    nvtx_range_push,
+)
+
+try:
+    import transformer_engine  # pylint: disable=unused-import
+
+    HAVE_TE = True
+except ImportError:
+    HAVE_TE = False
 
 
 # pylint: disable=missing-class-docstring
@@ -51,6 +64,8 @@ class MLP(MegatronModule):
         submodules: MLPSubmodules,
         is_expert: bool = False,
         input_size: Optional[int] = None,
+        ffn_hidden_size: int = None,
+        tp_group: Optional[torch.distributed.ProcessGroup] = None,
     ):
         super().__init__(config=config)
 
@@ -58,14 +73,20 @@ class MLP(MegatronModule):
 
         self.input_size = input_size if input_size != None else self.config.hidden_size
 
+        tp_group = get_tensor_model_parallel_group_if_none(tp_group, is_expert=is_expert)
+        if ffn_hidden_size is None:
+            if is_expert:
+                raise ValueError("MoE MLP requires `ffn_hidden_size`, but it was not provided.")
+            warnings.warn(
+                "MLP requires ffn_hidden_size, but it was not provided. Using \
+                    config.ffn_hidden_size by default.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            ffn_hidden_size = self.config.ffn_hidden_size
+
         # If this is a gated linear unit we double the output width
         # see https://arxiv.org/pdf/2002.05202.pdf
-        if is_expert and self.config.moe_ffn_hidden_size != None:
-            # Experts read ffn_hidden_size from config.moe_ffn_hidden_size
-            ffn_hidden_size = self.config.moe_ffn_hidden_size
-        else:
-            # Normal MLPs read ffn_hidden_size from config.ffn_hidden_size
-            ffn_hidden_size = self.config.ffn_hidden_size
         if self.config.gated_linear_unit:
             ffn_hidden_size *= 2
 
@@ -79,7 +100,8 @@ class MLP(MegatronModule):
             bias=self.config.add_bias_linear,
             skip_bias_add=True,
             is_expert=is_expert,
-            tp_comm_buffer_name='fc1',
+            tp_comm_buffer_name="fc1",
+            tp_group=tp_group,
         )
 
         self.activation_func = self.config.activation_func
@@ -94,14 +116,18 @@ class MLP(MegatronModule):
             input_is_parallel=True,
             skip_bias_add=True,
             is_expert=is_expert,
-            tp_comm_buffer_name='fc2',
+            tp_comm_buffer_name="fc2",
+            tp_group=tp_group,
         )
 
     def forward(self, hidden_states, per_token_scale=None):
         """Perform the forward pass through the MLP block."""
         # [s, b, 4 * h/p]
+        nvtx_range_push(suffix="linear_fc1")
         intermediate_parallel, bias_parallel = self.linear_fc1(hidden_states)
+        nvtx_range_pop(suffix="linear_fc1")
 
+        nvtx_range_push(suffix="activation")
         if self.config.bias_activation_fusion:
             if per_token_scale is not None:
                 if self.activation_func == F.silu and self.config.gated_linear_unit:
@@ -128,6 +154,9 @@ class MLP(MegatronModule):
                         intermediate_parallel,
                         bias_parallel,
                         self.config.activation_func_fp8_input_store,
+                        self.config.cpu_offloading
+                        and self.config.cpu_offloading_activations
+                        and HAVE_TE,
                     )
                 else:
                     raise ValueError("Only support fusion of gelu and swiglu")
@@ -148,9 +177,12 @@ class MLP(MegatronModule):
                 original_dtype = intermediate_parallel.dtype
                 intermediate_parallel = intermediate_parallel * per_token_scale.unsqueeze(-1)
                 intermediate_parallel = intermediate_parallel.to(original_dtype)
+        nvtx_range_pop(suffix="activation")
 
         # [s, b, h]
+        nvtx_range_push(suffix="linear_fc2")
         output, output_bias = self.linear_fc2(intermediate_parallel)
+        nvtx_range_pop(suffix="linear_fc2")
 
         if per_token_scale is not None:
             assert output_bias is None, "Bias is not supported with per_token_scale"
@@ -159,14 +191,14 @@ class MLP(MegatronModule):
 
     # pylint: disable=missing-function-docstring
     def sharded_state_dict(
-        self, prefix: str = '', sharded_offsets: tuple = (), metadata: Optional[dict] = None
+        self, prefix: str = "", sharded_offsets: tuple = (), metadata: Optional[dict] = None
     ) -> ShardedStateDict:
         sharded_state_dict = {}
         for name, module in self._modules.items():
-            sub_sd = module.sharded_state_dict(f'{prefix}{name}.', sharded_offsets, metadata)
-            if self.config.gated_linear_unit and name == 'linear_fc1':
+            sub_sd = module.sharded_state_dict(f"{prefix}{name}.", sharded_offsets, metadata)
+            if self.config.gated_linear_unit and name == "linear_fc1":
                 for k, v in sub_sd.items():
-                    if k in (f'{prefix}{name}.weight', f'{prefix}{name}.bias'):
+                    if k in (f"{prefix}{name}.weight", f"{prefix}{name}.bias"):
                         sub_sd[k] = apply_swiglu_sharded_factory(v, sharded_offsets)
             sharded_state_dict.update(sub_sd)
         return sharded_state_dict

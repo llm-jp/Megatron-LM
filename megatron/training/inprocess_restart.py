@@ -5,6 +5,7 @@ import os
 import socket
 import warnings
 from datetime import timedelta
+from typing import Optional
 
 import torch
 
@@ -77,8 +78,15 @@ def inprocess_restart(train, args):
             )
         )
 
+    # --inprocess-max-iterations has to reach inprocess.initialize.RetryController;
+    # it is the only component that bounds the number of restart iterations. Without
+    # it the flag is silently ignored and a workload that keeps failing restarts
+    # indefinitely instead of terminating.
     initialize = inprocess.Compose(
-        inprocess.initialize.RetryController(min_world_size=args.inprocess_active_world_size),
+        inprocess.initialize.RetryController(
+            max_iterations=args.inprocess_max_iterations,
+            min_world_size=args.inprocess_active_world_size,
+        ),
         inprocess.nested_restarter.NestedRestarterHandlingCompleted(),
     )
 
@@ -99,6 +107,23 @@ def inprocess_restart(train, args):
     )
     completion = inprocess.nested_restarter.NestedRestarterFinalized()
     terminate = inprocess.nested_restarter.NestedRestarterAborted()
+
+    # nvidia_resiliency_ext injects the active CallWrapper only into arguments whose
+    # *type annotation* is inprocess.CallWrapper (see inprocess.param_utils.check_type).
+    # Megatron cannot annotate its entrypoints with that type because
+    # nvidia_resiliency_ext is an optional dependency, so the annotation has to live
+    # here, where the module is known to be importable. Without this forwarding shim
+    # `pretrain` always sees inprocess_call_wrapper=None, the per-iteration
+    # PrefixStore in pretrain() is never created, and every restart re-uses the store
+    # of the previous iteration -- which deadlocks the first collective after a
+    # restart (all ranks hang in the forced all_reduce of
+    # maybe_force_nccl_backend_init).
+    train_fn = train
+
+    def forward_call_wrapper(
+        *fn_args, call_wrapper: Optional[inprocess.CallWrapper] = None, **fn_kwargs
+    ):
+        return train_fn(*fn_args, inprocess_call_wrapper=call_wrapper, **fn_kwargs)
 
     train = inprocess.Wrapper(
         store_kwargs={
@@ -123,7 +148,7 @@ def inprocess_restart(train, args):
         hard_timeout=timedelta(seconds=args.inprocess_hard_timeout),
         termination_grace_time=timedelta(seconds=args.inprocess_termination_grace_time),
         enabled=True,
-    )(train)
+    )(forward_call_wrapper)
 
     return train
 

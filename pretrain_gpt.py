@@ -389,19 +389,31 @@ if __name__ == "__main__":
     # Temporary for transition to core datasets
     setattr(train_valid_test_datasets_provider, "is_distributed", True)
 
-    # Optionally enable inprocess restart on pretrain
-    pretrain, store = inprocess_restart.maybe_wrap_for_inprocess_restart(pretrain)
+    # Argument parsing has to happen inside the function that gets wrapped for
+    # in-process restart. Between restart iterations nvidia_resiliency_ext calls
+    # inprocess_restart.destroy_state() -> training.destroy_global_state(), which
+    # clears the global arguments, so a restarted invocation that reused arguments
+    # parsed once up-front would immediately fail in get_args() with
+    # "AssertionError: args is not initialized.".
+    def parse_args_and_pretrain(store=None, inprocess_call_wrapper=None):
+        args = parse_and_validate_args(
+            extra_args_provider=add_modelopt_args if has_nvidia_modelopt else None,
+            args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+        )
+        full_config = pretrain_cfg_container_from_args(args)
+        pretrain(full_config,
+            train_valid_test_datasets_provider,
+            partial(model_provider, gpt_builder),
+            ModelType.encoder_or_decoder,
+            forward_step,
+            store=store,
+            get_embedding_ranks=get_embedding_ranks,
+            inprocess_call_wrapper=inprocess_call_wrapper,
+        )
 
-    args = parse_and_validate_args(
-        extra_args_provider=add_modelopt_args if has_nvidia_modelopt else None,
-        args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+    # Optionally enable inprocess restart on pretrain
+    entrypoint, store = inprocess_restart.maybe_wrap_for_inprocess_restart(
+        parse_args_and_pretrain
     )
-    full_config = pretrain_cfg_container_from_args(args)
-    pretrain(full_config,
-        train_valid_test_datasets_provider,
-        partial(model_provider, gpt_builder),
-        ModelType.encoder_or_decoder,
-        forward_step,
-        store=store,
-        get_embedding_ranks=get_embedding_ranks,
-    )
+
+    entrypoint(store=store)

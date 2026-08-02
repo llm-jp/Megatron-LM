@@ -857,9 +857,11 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler, num_floati
         else:
             onelogger_finalize_fn()
 
-    # Additional callback for wandb (last rank)
-    if not torch.distributed.is_initialized() \
-       or is_last_rank():
+    # Additional callback for wandb (last rank). Skipped for local checkpoints: they are
+    # node-local and per-rank, `checkpoint_name` names no existing path and no tracker file
+    # is written, so the artifact reference would raise instead of tracking anything.
+    if ckpt_type != CheckpointType.LOCAL and (not torch.distributed.is_initialized()
+                                              or is_last_rank()):
         def wandb_finalize_fn():
             wandb_utils.on_save_checkpoint_success(checkpoint_name, get_checkpoint_tracker_filename(save_dir), save_dir, iteration)
         if args.async_save:
@@ -2034,9 +2036,10 @@ def load_checkpoint(ddp_model, optimizer, opt_param_scheduler, load_arg='load', 
                  f'p {mpu.get_pipeline_model_parallel_rank() + 1}/{mpu.get_pipeline_model_parallel_world_size()} ] '
                  f'at iteration {iteration}')
 
-    # Additional callback for wandb (last rank)
-    if not torch.distributed.is_initialized() \
-       or is_last_rank():
+    # Additional callback for wandb (last rank). Skipped for local checkpoints, which have no
+    # artifact to look up and whose `checkpoint_name` is an (iteration, rank, session_id) tuple.
+    if ckpt_type != CheckpointType.LOCAL and (not torch.distributed.is_initialized()
+                                              or is_last_rank()):
         wandb_utils.on_load_checkpoint_success(checkpoint_name, load_dir)
 
     torch.cuda.empty_cache()

@@ -1,6 +1,7 @@
 # Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
 
 import logging
+import weakref
 from contextlib import contextmanager
 from typing import Optional
 
@@ -416,9 +417,17 @@ class DistributedDataParallel(_BaseDataParallel):
         when a module uses a parameter in a bucket with a still incomplete all-gather).
         """
 
+        # Reference `self` weakly: these hooks stay registered on the sub-modules unless
+        # disable_forward_pre_hook() runs, so a strong reference would keep the DDP and its
+        # param/grad buffers alive after the caller drops the model.
+        self_ref = weakref.ref(self)
+
         def hook(module, *unused):
+            ddp = self_ref()
+            if ddp is None:
+                return
             assert (
-                self.use_forward_hook
+                ddp.use_forward_hook
             ), "Should use pre-hook only when overlap_param_gather is True"
 
             if is_graph_capturing():
@@ -428,7 +437,7 @@ class DistributedDataParallel(_BaseDataParallel):
             for param in module.parameters(recurse=False):
                 # Skip parameters without an associated buffer (such parameters have a
                 # .requires_grad field equal to False).
-                if param not in self.param_to_bucket_group:
+                if param not in ddp.param_to_bucket_group:
                     continue
                 assert param.requires_grad
 
@@ -437,10 +446,10 @@ class DistributedDataParallel(_BaseDataParallel):
                 # If overlapping param all-gather with optimizer step, then all-gather has
                 # already been dispatched in optimizer step.
                 skip_next_bucket_dispatch = (
-                    self.ddp_config.align_param_gather
-                    or self.overlap_param_gather_with_optimizer_step
+                    ddp.ddp_config.align_param_gather
+                    or ddp.overlap_param_gather_with_optimizer_step
                 )
-                self.param_to_bucket_group[param].finish_param_sync(
+                ddp.param_to_bucket_group[param].finish_param_sync(
                     skip_next_bucket_dispatch=skip_next_bucket_dispatch
                 )
 
@@ -453,13 +462,21 @@ class DistributedDataParallel(_BaseDataParallel):
         in a batch).
         """
 
+        # Reference `self` weakly: this hook is owned by the autograd graph on the C++ side,
+        # where gc cannot see it, so a strong reference would keep the DDP and its
+        # param/grad buffers alive after the caller drops the model.
+        self_ref = weakref.ref(self)
+
         def hook(*unused):
+            ddp = self_ref()
+            if ddp is None:
+                return
             if is_graph_capturing():
                 return
 
-            if param in self.param_to_bucket_group:
+            if param in ddp.param_to_bucket_group:
                 assert param.requires_grad
-                if self.ddp_config.overlap_grad_reduce:
+                if ddp.ddp_config.overlap_grad_reduce:
                     assert (
                         param.grad is not None
                     ), 'param.grad being None is not safe when overlap_grad_reduce is True'
@@ -469,9 +486,9 @@ class DistributedDataParallel(_BaseDataParallel):
                     param.main_grad.add_(param.grad.data)
                 param.grad = None
 
-                if self.ddp_config.overlap_grad_reduce:
-                    self.param_to_bucket_group[param].register_grad_ready(
-                        param, self.force_all_reduce
+                if ddp.ddp_config.overlap_grad_reduce:
+                    ddp.param_to_bucket_group[param].register_grad_ready(
+                        param, ddp.force_all_reduce
                     )
 
         return hook
